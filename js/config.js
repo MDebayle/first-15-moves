@@ -9,7 +9,7 @@ export const CONFIG = {
   // Set this to your Render URL after deploying the backend, e.g.:
   //   API_BASE: "https://first-15-moves-api.onrender.com"
   // Left blank = use browser-WASM fallback.
-  API_BASE: "",
+  API_BASE: "https://first-15-moves-api.onrender.com",
 
   // Default analysis depth for move critique (interactive, must feel snappy).
   ANALYSIS_DEPTH: 12,
