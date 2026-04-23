@@ -51,6 +51,7 @@ import {
   buildHintLadder,
   buildTakeawayRule,
 } from "./coaching.js";
+import { FIRST_MOVE_ADVICE, FIRST_MOVE_FALLBACK } from "../data/firstMoveAdvice.js";
 
 const MAX_PLIES = 30; // 15 full moves
 const DEFAULT_OPENING_ID = "italian"; // auto-start with the Italian Game
@@ -1143,6 +1144,18 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
   // --- Effect: ONE sentence on what the move does ---
   const rubric = computeRubric(verdict, moveObj, ply);
   let effectTxt = computePlanFit(verdict, moveObj, ply, rubric) || verdict.message || "";
+
+  // First-move override: on ply 1 we prefer a hand-crafted, opening-aware
+  // sentence tied to the specific SAN the player chose. This is the single
+  // best teaching moment of the whole game, so the generic plan-fit heuristic
+  // steps aside in favor of curated advice in data/firstMoveAdvice.js.
+  if (ply === 1 && moveObj && moveObj.san) {
+    const openingId = state.opening && state.opening.id;
+    const curated =
+      (openingId && FIRST_MOVE_ADVICE[openingId] && FIRST_MOVE_ADVICE[openingId][moveObj.san]) ||
+      FIRST_MOVE_FALLBACK;
+    if (curated) effectTxt = curated;
+  }
 
   // One-time teaching line on the first "book" move: emphasize that book is
   // a theory fact, not a virtue — natural moves often stumble into it.
