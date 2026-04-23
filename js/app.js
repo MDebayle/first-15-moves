@@ -1220,17 +1220,6 @@ const btnThreats = document.getElementById("btnOverlayThreats");
 if (btnCenter) btnCenter.addEventListener("click", () => toggleOverlay("center"));
 if (btnThreats) btnThreats.addEventListener("click", () => toggleOverlay("threats"));
 
-// Primary CTA: if a session is in progress, focus the board; otherwise start fresh
-document.getElementById("btnStartLesson").addEventListener("click", () => {
-  if (state.ply === 0) {
-    // No-op — the board is already ready to accept a move. Just focus.
-    document.getElementById("hero-board").scrollIntoView({ behavior: "smooth", block: "center" });
-  } else {
-    // Mid-session: confirm-style restart is overkill; just restart the current opening
-    startGame(state.openingId);
-  }
-});
-
 // Kick things off: auto-start with the default opening so the board is live on load
 renderOpeningCards();
 startGame(DEFAULT_OPENING_ID);

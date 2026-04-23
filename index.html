@@ -39,55 +39,29 @@
         </svg>
         <span class="logo-text">The First 15 Moves</span>
       </a>
+      <h1 class="header-tagline">Master the first 15 moves of chess.</h1>
       <nav class="site-nav">
         <a href="#how">How it works</a>
         <a href="#openings">Openings</a>
-        <a href="#hero-board" class="nav-cta">Start</a>
       </nav>
     </header>
 
     <main class="page">
-      <!-- HERO: split layout, live board on the right -->
-      <section id="landing" class="panel hero" aria-label="Start a lesson">
-        <div class="hero-copy">
-          <h1 class="hero-title">Master the first 15 moves of chess.</h1>
-          <hr class="hero-rule" aria-hidden="true" />
-          <p class="hero-subhead">
-            Play real openings, get plain-English feedback after every move, and learn the principles that make early moves <em>strong</em>.
-          </p>
-
-          <div class="hero-ctas">
-            <button class="btn-primary btn-lg" id="btnStartLesson" type="button">Start a guided lesson</button>
-            <button class="btn-ghost btn-lg" id="btnPickOpening" type="button">Browse openings</button>
-          </div>
-
-          <p class="hero-trust">
-            <span class="trust-dot" aria-hidden="true"></span>
-            <span>Powered by Stockfish · plain-English coaching · no memorization</span>
-          </p>
-          <p class="hero-roadmap">
-            <span class="roadmap-tag">For now</span>
-            You play the White pieces. Black-side lessons are next.
-          </p>
-
-          <ul class="hero-stages" aria-label="The four stages of an opening">
-            <li><span class="stage-num">1–4</span><span class="stage-label">Claim the center</span></li>
-            <li><span class="stage-num">5–8</span><span class="stage-label">Develop &amp; coordinate</span></li>
-            <li><span class="stage-num">9–12</span><span class="stage-label">King safety &amp; structure</span></li>
-            <li><span class="stage-num">13–15</span><span class="stage-label">Plan &amp; pressure</span></li>
-          </ul>
-        </div>
-
+      <!-- HERO: board-first layout — board is the primary element, coach on the right -->
+      <section id="landing" class="panel hero" aria-label="Play the opening">
         <div class="hero-board" id="hero-board">
           <div class="hero-board-header">
             <div class="hero-board-meta">
-              <p class="eyebrow" id="openingEco">C50</p>
               <h2 class="opening-title" id="openingTitle">Italian Game</h2>
+              <span class="eco-chip" id="openingEco">C50</span>
             </div>
-            <div class="phase-chip" id="phaseChip" aria-live="polite">
-              <span class="phase-chip-move"><span id="moveCounter">0</span><span class="phase-chip-total"> / 15</span></span>
-              <span class="phase-chip-divider" aria-hidden="true">·</span>
-              <span class="phase-chip-stage" id="phaseStage">Claim the center</span>
+            <div class="hero-board-header-right">
+              <div class="phase-chip" id="phaseChip" aria-live="polite">
+                <span class="phase-chip-move"><span id="moveCounter">0</span><span class="phase-chip-total"> / 15</span></span>
+                <span class="phase-chip-divider" aria-hidden="true">·</span>
+                <span class="phase-chip-stage" id="phaseStage">Claim the center</span>
+              </div>
+              <button class="board-chip-browse" id="btnPickOpening" type="button">Browse openings</button>
             </div>
           </div>
 
@@ -119,6 +93,31 @@
               </div>
             </div>
           </div>
+
+          <!-- Caption row: subhead + trust + roadmap, muted, under the board -->
+          <div class="board-caption preplay-only">
+            <p class="board-caption-lede">
+              Play real openings, get plain-English feedback after every move, and learn the principles that make early moves <em>strong</em>.
+            </p>
+            <div class="board-caption-meta">
+              <span class="board-caption-trust">
+                <span class="trust-dot" aria-hidden="true"></span>
+                Powered by Stockfish · plain-English coaching · no memorization
+              </span>
+              <span class="board-caption-roadmap">
+                <span class="roadmap-tag">For now</span>
+                You play the White pieces. Black-side lessons are next.
+              </span>
+            </div>
+          </div>
+
+          <!-- Inline 4-cell phase strip below caption -->
+          <ul class="phase-strip-inline preplay-only" aria-label="The four stages of an opening">
+            <li><span class="stage-num">1–4</span><span class="stage-label">Claim the center</span></li>
+            <li><span class="stage-num">5–8</span><span class="stage-label">Develop &amp; coordinate</span></li>
+            <li><span class="stage-num">9–12</span><span class="stage-label">King safety &amp; structure</span></li>
+            <li><span class="stage-num">13–15</span><span class="stage-label">Plan &amp; pressure</span></li>
+          </ul>
         </div>
 
         <aside class="coach-panel" aria-label="Coach feedback">
@@ -131,7 +130,7 @@
               </svg>
             </div>
             <div>
-              <p class="coach-name">Coach</p>
+              <p class="coach-name">Opening coach</p>
               <p class="coach-status" id="coachStatus">Loading engine…</p>
             </div>
           </div>
@@ -300,36 +299,22 @@
           <li>
             <span class="how-num">1</span>
             <div>
-              <h3>Play a move</h3>
-              <p>Drag or click a piece. The board accepts any legal move — we won't force you into a script.</p>
+              <h3>Move</h3>
+              <p>Drag or click a piece. Any legal move — we won't force you into a script.</p>
             </div>
           </li>
           <li>
             <span class="how-num">2</span>
             <div>
-              <h3>Get a verdict</h3>
-              <p>Two axes, plain English. <span class="term" data-term="book">Theory<span class="tt">A known move from established opening theory.</span></span> status plus a quality read — Strong, Playable, Inaccuracy, Mistake, or Blunder.</p>
+              <h3>Verdict</h3>
+              <p>Two axes, plain English. <span class="term" data-term="book">Theory<span class="tt">A known move from established opening theory.</span></span> status plus a quality read — Strong, Playable, Inaccuracy, Mistake, or Blunder — with the principle each move supports or breaks.</p>
             </div>
           </li>
           <li>
             <span class="how-num">3</span>
             <div>
-              <h3>See the principles</h3>
-              <p>Each move is tagged with the ideas it supports or breaks: center, development, king safety, tempo.</p>
-            </div>
-          </li>
-          <li>
-            <span class="how-num">4</span>
-            <div>
-              <h3>Finish 15 moves</h3>
-              <p>Complete the opening phase. The computer plays a real reply at each step, not a softball.</p>
-            </div>
-          </li>
-          <li>
-            <span class="how-num">5</span>
-            <div>
-              <h3>Take a lesson away</h3>
-              <p>The recap names what you did well, where you drifted, and the one idea worth remembering next time.</p>
+              <h3>Takeaway</h3>
+              <p>Finish all 15 moves and the recap names one rule worth remembering next game.</p>
             </div>
           </li>
         </ol>
@@ -338,10 +323,7 @@
       <!-- Closing note (hidden once the user starts playing) -->
       <section class="panel about preplay-only" id="aboutSection">
         <p class="about-lede">
-          A good opening won't win every game, but a bad opening makes every game harder. Most players don't lose the opening because they failed to memorize — they lose it because they didn't understand what each early move was <em>for</em>.
-        </p>
-        <p class="about-lede about-lede-muted">
-          This site pairs Stockfish with hand-written theory notes. The engine checks the math. The coach explains the meaning.
+          Most players don't lose the opening because they failed to memorize — they lose it because they didn't understand what each early move was <em>for</em>.
         </p>
       </section>
     </main>
