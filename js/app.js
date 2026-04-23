@@ -64,7 +64,10 @@ import { getQueensideKnightAdvice } from "../data/queensideKnightAdvice.js";
 import { getKingsideKnightAdvice } from "../data/kingsideKnightAdvice.js";
 import { getPawnAdvice } from "../data/pawnAdvice.js";
 import { getQueenAdvice } from "../data/queenAdvice.js";
+import { getRookAdvice, buildCastlingNudge } from "../data/rookAdvice.js";
+import { getKingAdvice, getKingCastleUrgency, getDelayedCastleWarning } from "../data/kingAdvice.js";
 import { buildRoleAwareLine, buildNextActorSuggestion } from "../data/pieceRoles.js";
+import { getOpeningManual, getOpeningThemeLine } from "../data/openingManual.js";
 import { buildOpponentOpeningNote } from "./identifyBlackOpening.js";
 
 const MAX_PLIES = 30; // 15 full moves
@@ -586,6 +589,14 @@ function renderOpeningCards() {
     if (opening.id === state.openingId) btn.classList.add("is-current");
     btn.type = "button";
     const diffClass = difficultyClass(opening.difficulty);
+    // Pull in the Opening Manual entry: theme line + lead actors. This turns
+    // each selector card from a plain description into a real identity card
+    // that tells the student what opening they're picking at a glance.
+    const manual = getOpeningManual(opening.id);
+    const manualBlock = manual ? `
+      <p class="opening-card-theme">${escapeHtml(manual.theme)}</p>
+      <p class="opening-card-leads"><span class="opening-card-leads-label">Lead actors:</span> ${escapeHtml(manual.symphony.leads.join(", "))}</p>
+    ` : "";
     btn.innerHTML = `
       <div class="opening-card-header">
         <span class="opening-card-name">${opening.name}</span>
@@ -594,11 +605,23 @@ function renderOpeningCards() {
       ${opening.difficulty ? `<span class="opening-card-difficulty ${diffClass}">${opening.difficulty}</span>` : ""}
       ${opening.tagline ? `<p class="opening-card-tagline">${opening.tagline}</p>` : ""}
       <p class="opening-card-desc">${opening.intro}</p>
+      ${manualBlock}
     `;
     btn.addEventListener("click", () => {
       startGame(opening.id);
-      document.getElementById("landing").scrollIntoView({ behavior: "smooth", block: "start" });
       panels.openings.hidden = true;
+      // Scroll-to-top fix: the user reported that selecting an opening was
+      // leaving the page slightly short of the top. scrollIntoView on the
+      // #landing element can stop below 0 if there are elements above it in
+      // document flow. Force the page to the true top on both scrolling
+      // roots so mobile and desktop both land at y=0.
+      try {
+        window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      } catch (_) {
+        window.scrollTo(0, 0);
+      }
     });
     container.appendChild(btn);
   }
@@ -1335,6 +1358,45 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
     if (qLine) { effectTxt = qLine; hasCuratedAdvice = true; }
   }
 
+  // King override: the king is a PRIORITY in the opening, not an actor.
+  // The report's central lessons:
+  //   - Ke2/Kf1/Kd2/Ke3 manual king moves in the first ~8 plies are serious
+  //     errors — they forfeit castling rights and block development.
+  //   - O-O is the single highest-value move in the opening — it must be
+  //     praised loudly, not just noted.
+  //   - Per-opening flavor: Italian/Ruy require urgent castling, QGD delays
+  //     by design, English is flexible, London has the cleanest path.
+  if (moveObj && moveObj.piece === "k") {
+    const openingId = state.opening && state.opening.id;
+    const allSans = (state.history || []).map((h) => h.san).filter(Boolean);
+    const kLine = getKingAdvice({
+      moveObj,
+      openingId,
+      historySan: allSans,
+      ply,
+    });
+    if (kLine) { effectTxt = kLine; hasCuratedAdvice = true; }
+  }
+
+  // Rook override: rooks are the most misunderstood opening pieces. The
+  // rook strategy report's central insight — rooks are usually IMPORTANT
+  // BEFORE THEY ARE ACTIVE in the opening. The a1 rook is a structural
+  // consequence piece; the h1 rook is a castling reward piece. This block
+  // fires whenever a rook moves from its home square and produces opening-
+  // specific coaching that either (a) criticizes an early rook lift, or
+  // (b) endorses a rook move that properly follows castling/structure.
+  if (moveObj && moveObj.piece === "r") {
+    const openingId = state.opening && state.opening.id;
+    const allSans = (state.history || []).map((h) => h.san).filter(Boolean);
+    const rLine = getRookAdvice({
+      moveObj,
+      openingId,
+      historySan: allSans,
+      ply,
+    });
+    if (rLine) { effectTxt = rLine; hasCuratedAdvice = true; }
+  }
+
   // Universal role-aware fallback: whenever none of the hand-crafted advice
   // modules above took ownership of the effect line, fall back to a role
   // lookup from the comprehensive piece-role chart (all 5 openings × every
@@ -1666,6 +1728,37 @@ function renderCoachPrompt(ply) {
     primary = openingPrimary;
     openingPrimary = null; // consumed
   }
+
+  // Rook-aware castling nudge: when the kingside minors are out and White
+  // hasn't castled yet, the best "next actor" is O-O itself — AND castling
+  // is ALSO h1-rook development. The rook report's central insight. We
+  // upgrade the primary to a rook-framed castling sentence that teaches
+  // the double benefit. Only fires when the current primary is either the
+  // generic castling-reminder line, OR when the opening's next-actor
+  // suggestion is explicitly "Castle kingside" (plan step).
+  try {
+    const _openingId = state.opening && state.opening.id;
+    const _hist = (state.history || []).map((h) => h.san).filter(Boolean);
+    // Merge king-report urgency into the rook-report nudge so the single
+    // castling nudge carries BOTH insights: castling is rook development
+    // AND castling is urgent king safety. One nudge, two reports.
+    const _kingUrgency = getKingCastleUrgency(_openingId);
+    const castlingNudge = buildCastlingNudge({
+      openingId: _openingId,
+      historySan: _hist,
+      nextPly,
+      kingUrgency: _kingUrgency,
+    });
+    const primaryIsCastlingHint =
+      /^Castle kingside/i.test(primary) ||
+      /then castle/i.test(primary) ||
+      /castle as soon/i.test(primary) ||
+      /^Your king is still in the center\. \*\*Castling\*\*/.test(primary) ||
+      /^Your king is still in the center\. Castling/.test(primary);
+    if (castlingNudge && primaryIsCastlingHint) {
+      primary = castlingNudge;
+    }
+  } catch (_) { /* best-effort */ }
 
   primaryEl.innerHTML = escapeAndBold(primary);
 
@@ -2524,8 +2617,43 @@ const helpModalEl = document.getElementById("helpModal");
 const btnHelpEl = document.getElementById("btnHelp");
 const btnHelpCloseEl = document.getElementById("btnHelpClose");
 const btnHelpDoneEl = document.getElementById("btnHelpDone");
+// Render the "About this opening" section inside the Help modal from the
+// Opening Manual. Called on every open so it stays in sync with the
+// currently-selected opening.
+function renderHelpOpeningBrief() {
+  const section = document.getElementById("helpOpeningBrief");
+  const body = document.getElementById("helpOpeningBriefBody");
+  const title = document.getElementById("helpOpeningBriefTitle");
+  if (!section || !body) return;
+  const openingId = state.openingId;
+  const opening = openingId ? OPENINGS[openingId] : null;
+  const manual = openingId ? getOpeningManual(openingId) : null;
+  if (!opening || !manual) {
+    section.hidden = true;
+    return;
+  }
+  if (title) {
+    title.textContent = `About ${opening.name}`;
+  }
+  const { theme, whyProsLoveIt, symphony, rhythm, summary, idealPlayer } = manual;
+  body.innerHTML = `
+    <p class="help-opening-theme"><strong>${escapeHtml(theme)}</strong></p>
+    <p>${escapeHtml(whyProsLoveIt)}</p>
+    <div class="help-opening-cast">
+      <p><span class="help-opening-cast-label">Lead actors:</span> ${escapeHtml(symphony.leads.join(", "))}</p>
+      <p><span class="help-opening-cast-label">Supporting cast:</span> ${escapeHtml(symphony.supports.join(", "))}</p>
+      <p><span class="help-opening-cast-label">Reserves:</span> ${escapeHtml(symphony.reserves.join(", "))}</p>
+    </div>
+    <p class="help-opening-rhythm">${escapeHtml(rhythm)}</p>
+    <p class="help-opening-summary"><em>${escapeHtml(summary)}</em></p>
+    <p class="help-opening-profile">${escapeHtml(idealPlayer)}</p>
+  `;
+  section.hidden = false;
+}
+
 if (helpModalEl && btnHelpEl) {
   btnHelpEl.addEventListener("click", () => {
+    renderHelpOpeningBrief();
     if (typeof helpModalEl.showModal === "function") {
       helpModalEl.showModal();
       helpModalEl.scrollTop = 0;

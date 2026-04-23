@@ -57,6 +57,14 @@
           <button class="help-close" id="btnHelpClose" type="button" aria-label="Close">×</button>
         </header>
 
+        <!-- Dynamic "About this opening" section — rendered by JS based on the
+             current opening. Shows the manual's theme, cast, rhythm, and ideal
+             player. Leave the placeholder hidden when no opening is active. -->
+        <section class="help-section help-opening-brief" id="helpOpeningBrief" hidden>
+          <h3 id="helpOpeningBriefTitle">About this opening</h3>
+          <div id="helpOpeningBriefBody"></div>
+        </section>
+
         <section class="help-section">
           <h3>What is a chess opening?</h3>
           <p>An <strong>opening</strong> is the first stretch of a chess game — roughly the first 10 to 15 moves — where both players race to set up their army before the real fighting begins. A good opening does three things: it claims the center, it develops your pieces into useful positions, and it keeps your king safe.</p>
