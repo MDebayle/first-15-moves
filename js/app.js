@@ -60,6 +60,8 @@ import {
 } from "../data/secondMoveAdvice.js";
 import { getQueensideBishopAdvice } from "../data/queensideBishopAdvice.js";
 import { getKingsideBishopAdvice } from "../data/kingsideBishopAdvice.js";
+import { getQueensideKnightAdvice } from "../data/queensideKnightAdvice.js";
+import { getKingsideKnightAdvice } from "../data/kingsideKnightAdvice.js";
 import { buildOpponentOpeningNote } from "./identifyBlackOpening.js";
 
 const MAX_PLIES = 30; // 15 full moves
@@ -1242,6 +1244,46 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       ply,
     });
     if (kbLine) effectTxt = kbLine;
+  }
+
+  // Queenside-knight override: the b1 knight is the most structure-sensitive
+  // piece in the opening. Nc3 vs Nd2 vs wait depends entirely on what the
+  // c-pawn is doing — Nc3 is classical in QGD/English but BLOCKS the c-pawn
+  // in Italian/Ruy/London. Every b1-knight move is a chance to teach c-pawn
+  // freedom and pawn-structure-fit.
+  if (moveObj && moveObj.piece === "n" && moveObj.from === "b1") {
+    const openingId = state.opening && state.opening.id;
+    const prevSan = (state.history || [])
+      .slice(0, -1)
+      .map((h) => h.san)
+      .filter(Boolean);
+    const qnLine = getQueensideKnightAdvice({
+      moveObj,
+      openingId,
+      historySan: prevSan,
+      ply,
+    });
+    if (qnLine) effectTxt = qnLine;
+  }
+
+  // Kingside-knight override: Nf3 is nearly automatic in classical openings
+  // and one of the most reliable moves in chess. The coach celebrates Nf3
+  // as the opening's engine in Italian/Ruy/QGD/London and the flexible-but-
+  // natural move in the English. Ne2 and Nh3 get firmly and opening-aware
+  // criticism.
+  if (moveObj && moveObj.piece === "n" && moveObj.from === "g1") {
+    const openingId = state.opening && state.opening.id;
+    const prevSan = (state.history || [])
+      .slice(0, -1)
+      .map((h) => h.san)
+      .filter(Boolean);
+    const knLine = getKingsideKnightAdvice({
+      moveObj,
+      openingId,
+      historySan: prevSan,
+      ply,
+    });
+    if (knLine) effectTxt = knLine;
   }
 
   // One-time teaching line on the first "book" move: emphasize that book is
