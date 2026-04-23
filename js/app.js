@@ -27,6 +27,17 @@ import { OPENINGS } from "../data/openings.js";
 import { Engine } from "./engine.js";
 import { CONFIG } from "./config.js";
 import { critique, CLASS, classToBadgeClass } from "./critique.js";
+import {
+  computeRubric,
+  rubricLabel,
+  rubricClass,
+  computeAxes,
+  computePlanFit,
+  computeCost,
+  narrateBlackReply,
+  buildHintLadder,
+  buildTakeawayRule,
+} from "./coaching.js";
 
 const MAX_PLIES = 30; // 15 full moves
 const DEFAULT_OPENING_ID = "italian"; // auto-start with the Italian Game
@@ -77,6 +88,8 @@ const state = {
   selectedHistoryPly: null,
   overlayCenter: false,
   overlayThreats: false,
+  hintStepIndex: 0,
+  hintLadderSteps: [],
 };
 
 // ---------- Panels ----------
@@ -202,7 +215,7 @@ async function startGame(openingId) {
   // Boot the engine if not already
   if (!state.engine) {
     state.engine = new Engine();
-    setCoachStatus("Waking up…");
+    setCoachStatus("Loading engine…");
     try {
       await state.engine.start();
       state.engineReady = true;
@@ -221,10 +234,31 @@ async function startGame(openingId) {
 function resetCoachPanel() {
   document.getElementById("coachMessage").textContent =
     "Make a move when you're ready. I'll tell you what it does, what it costs, and what to watch for next.";
-  document.getElementById("coachMeta").hidden = true;
+  const meta = document.getElementById("coachMeta");
+  if (meta) meta.hidden = true;
   document.getElementById("coachConcepts").innerHTML = "";
   const alts = document.getElementById("coachAlternatives");
   if (alts) alts.hidden = true;
+
+  // Round 3: hide deep-feedback surfaces until a move is played
+  const axes = document.getElementById("coachAxes");
+  if (axes) axes.hidden = true;
+  const rubric = document.getElementById("rubric");
+  if (rubric) rubric.hidden = true;
+  const narr = document.getElementById("coachNarrative");
+  if (narr) narr.hidden = true;
+  const planRow = document.getElementById("narrPlanRow");
+  if (planRow) planRow.hidden = true;
+  const costRow = document.getElementById("narrCostRow");
+  if (costRow) costRow.hidden = true;
+  const blackRow = document.getElementById("narrBlackRow");
+  if (blackRow) blackRow.hidden = true;
+  const ladder = document.getElementById("hintLadder");
+  if (ladder) ladder.hidden = true;
+  const steps = document.getElementById("hintSteps");
+  if (steps) steps.innerHTML = "";
+  state.hintStepIndex = 0;
+  state.hintLadderSteps = [];
 }
 
 function setCoachStatus(text) {
@@ -349,7 +383,7 @@ async function commitStudentMove(moveSpec) {
   // Mark body as has-played so landing-only copy hides
   document.body.classList.add("has-played");
 
-  renderCoach(verdict, alternatives);
+  renderCoach(verdict, alternatives, moveObj, ply);
   flashMoveBadge(verdict, moveObj.to);
   renderHistory();
   if (state.overlayThreats) applyThreatOverlay();
@@ -417,6 +451,7 @@ async function computerReply() {
             state.evalHistory.push(evalAfter);
             updatePhaseChip(state.ply);
             renderHistory();
+            showBlackReplyNarration(moveObj, state.ply);
             return;
           }
         }
@@ -459,9 +494,23 @@ async function computerReply() {
   if (state.overlayThreats) applyThreatOverlay();
   if (state.overlayCenter) applyCenterOverlay();
 
+  showBlackReplyNarration(moveObj, state.ply);
+
   if (state.chess.isGameOver() || state.ply >= MAX_PLIES) {
     endSession();
   }
+}
+
+function showBlackReplyNarration(blackMoveObj, ply) {
+  const narrEl = document.getElementById("coachNarrative");
+  const blackRow = document.getElementById("narrBlackRow");
+  const blackEl = document.getElementById("narrBlack");
+  if (!blackEl || !blackRow) return;
+  const line = narrateBlackReply(blackMoveObj, ply);
+  if (!line) return;
+  blackEl.textContent = line;
+  blackRow.hidden = false;
+  if (narrEl) narrEl.hidden = false;
 }
 
 function renderConceptsScorecard(studentMoves) {
@@ -532,24 +581,77 @@ function updatePhaseChip(ply) {
   stageEl.textContent = phase.label;
 }
 
-function renderCoach(verdict, alternatives) {
+function renderCoach(verdict, alternatives, moveObj, ply) {
   const msgEl = document.getElementById("coachMessage");
   msgEl.innerHTML = escapeAndBold(verdict.message);
 
-  const meta = document.getElementById("coachMeta");
-  meta.hidden = false;
-  const badge = document.getElementById("coachBadge");
-  badge.className = classToBadgeClass(verdict.classification);
-  badge.textContent = verdict.label;
+  // Close any open hint ladder when a move is played
+  const ladder = document.getElementById("hintLadder");
+  if (ladder) ladder.hidden = true;
 
-  const evalEl = document.getElementById("coachEval");
-  if (verdict.cpLoss != null) {
-    if (verdict.cpLoss < 40) evalEl.textContent = "Position stays roughly level.";
-    else evalEl.textContent = `≈ ${verdict.cpLoss} cp shift`;
-  } else {
-    evalEl.textContent = "";
+  // Legacy single-badge meta row — keep hidden in R3 (replaced by axes + rubric)
+  const meta = document.getElementById("coachMeta");
+  if (meta) meta.hidden = true;
+
+  // --- Axes: Theory + Quality chips ---
+  const axesEl = document.getElementById("coachAxes");
+  const axes = computeAxes(verdict);
+  const axTheory = document.getElementById("axisTheory");
+  const axQuality = document.getElementById("axisQuality");
+  if (axTheory && axQuality && axesEl) {
+    axTheory.textContent = axes.theory;
+    axTheory.className = "axis-value " + axes.theoryCls;
+    axQuality.textContent = axes.quality;
+    axQuality.className = "axis-value " + axes.qualityCls;
+    axesEl.hidden = false;
   }
 
+  // --- Rubric: 4 pills ---
+  const rubric = computeRubric(verdict, moveObj, ply);
+  const rubEl = document.getElementById("rubric");
+  const rubMap = [
+    ["rubCenter", rubric.center],
+    ["rubDevelopment", rubric.development],
+    ["rubKingSafety", rubric["king-safety"]],
+    ["rubTempo", rubric.tempo],
+  ];
+  for (const [id, score] of rubMap) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.textContent = rubricLabel(score);
+    el.className = "rubric-score " + rubricClass(score);
+  }
+  if (rubEl) rubEl.hidden = false;
+
+  // --- Narrative: Plan fit + Cost (Black's reply populated later in computerReply) ---
+  const planTxt = computePlanFit(verdict, moveObj, ply, rubric);
+  const costTxt = computeCost(verdict, moveObj, ply, rubric);
+  const narrEl = document.getElementById("coachNarrative");
+  const planRow = document.getElementById("narrPlanRow");
+  const planEl = document.getElementById("narrPlan");
+  const costRow = document.getElementById("narrCostRow");
+  const costEl = document.getElementById("narrCost");
+  const blackRow = document.getElementById("narrBlackRow");
+  const blackEl = document.getElementById("narrBlack");
+
+  if (planEl && planRow) {
+    if (planTxt) { planEl.innerHTML = escapeAndBold(planTxt); planRow.hidden = false; }
+    else { planRow.hidden = true; }
+  }
+  if (costEl && costRow) {
+    if (costTxt) { costEl.innerHTML = escapeAndBold(costTxt); costRow.hidden = false; }
+    else { costRow.hidden = true; }
+  }
+  // Reset Black's reply row — will be filled after engine responds
+  if (blackRow && blackEl) {
+    blackEl.textContent = "…";
+    blackRow.hidden = true;
+  }
+  if (narrEl) {
+    narrEl.hidden = !(planTxt || costTxt);
+  }
+
+  // --- Concepts row ---
   const conceptsEl = document.getElementById("coachConcepts");
   conceptsEl.innerHTML = "";
   (verdict.concepts || []).forEach((c) => {
@@ -792,6 +894,20 @@ function endSession() {
   document.getElementById("qDrift").innerHTML = buildDriftSummary(studentMoves);
   document.getElementById("qLesson").innerHTML = buildLessonSummary(studentMoves);
 
+  // ---------- One-sentence takeaway rule ----------
+  const takeawayEl = document.getElementById("takeawayRule");
+  const takeawayBody = document.getElementById("takeawayBody");
+  if (takeawayEl && takeawayBody) {
+    const rule = buildTakeawayRule(
+      studentMoves,
+      state.opening,
+      state.positiveConceptCounts,
+      state.negativeConceptCounts
+    );
+    takeawayBody.textContent = rule;
+    takeawayEl.hidden = false;
+  }
+
   // ---------- Concepts scorecard (four principles) ----------
   renderConceptsScorecard(studentMoves);
 
@@ -945,44 +1061,93 @@ async function showHint() {
   if (state.inputLocked) return;
   if (state.chess.turn() !== "w") return;
   setCoachStatus("Looking for a hint…");
-  const mainlineSan = state.opening.mainline[state.ply];
-  if (mainlineSan && state.chess.moves().includes(mainlineSan)) {
-    flashHint(mainlineSan, `Main line: **${mainlineSan}**`);
-    return;
-  }
+
+  // Get engine's best pick if we can (for level 4 of the ladder)
+  let engineBestSan = null;
   if (state.engineReady && state.engine) {
     try {
       const res = await state.engine.analyze(state.chess.fen(), { depth: 10 });
       if (res.bestmove) {
         const from = res.bestmove.slice(0, 2);
         const to = res.bestmove.slice(2, 4);
-        const moves = state.chess.moves({ verbose: true }).filter((m) => m.from === from && m.to === to);
-        const san = moves[0]?.san || `${from}-${to}`;
-        flashHint(san, `Engine's top pick: **${san}**`);
-        return;
+        const m = state.chess.moves({ verbose: true }).find((mv) => mv.from === from && mv.to === to);
+        if (m) engineBestSan = m.san;
       }
-    } catch (e) {
-      console.warn(e);
-    }
+    } catch (_) { /* noop */ }
   }
-  flashHint(null, "No hint available.");
+
+  const ply = state.ply + 1; // next ply (White to move)
+  const steps = buildHintLadder({
+    ply,
+    opening: state.opening,
+    chess: state.chess,
+    engineBestSan,
+  });
+  state.hintLadderSteps = steps;
+  state.hintStepIndex = 0;
+
+  renderHintLadderStep();
+  const ladder = document.getElementById("hintLadder");
+  if (ladder) ladder.hidden = false;
+  setCoachStatus("Hint shown.");
 }
 
-function flashHint(san, text) {
-  document.getElementById("coachMessage").innerHTML = escapeAndBold(text);
-  document.getElementById("coachMeta").hidden = true;
-  document.getElementById("coachConcepts").innerHTML = "";
-  setCoachStatus("Hint shown.");
-  if (san) {
-    const moves = state.chess.moves({ verbose: true }).filter((m) => m.san === san || m.san === san.replace(/[+#]/g, ""));
-    if (moves[0]) {
-      state.board.addMarker(MARKER_TYPE.frame, moves[0].from);
-      state.board.addMarker(MARKER_TYPE.frame, moves[0].to);
-      setTimeout(() => {
+function renderHintLadderStep() {
+  const list = document.getElementById("hintSteps");
+  const nextBtn = document.getElementById("btnHintNext");
+  if (!list) return;
+  list.innerHTML = "";
+  const visible = state.hintLadderSteps.slice(0, state.hintStepIndex + 1);
+  visible.forEach((txt) => {
+    const li = document.createElement("li");
+    li.innerHTML = escapeAndBold(txt);
+    list.appendChild(li);
+  });
+
+  // On final step, try to frame the engine's best move on the board
+  if (state.hintStepIndex >= state.hintLadderSteps.length - 1) {
+    if (nextBtn) {
+      nextBtn.disabled = true;
+      nextBtn.textContent = "That's the full hint";
+    }
+    // Parse any **SAN** markers out of the final step and frame it
+    const finalTxt = state.hintLadderSteps[state.hintLadderSteps.length - 1] || "";
+    const match = finalTxt.match(/\*\*([A-Za-z0-9\-+#=]+)\*\*/);
+    if (match) {
+      const sanToFrame = match[1];
+      const moves = state.chess.moves({ verbose: true }).filter(
+        (m) => m.san === sanToFrame || m.san === sanToFrame.replace(/[+#]/g, "")
+      );
+      if (moves[0]) {
         state.board.removeMarkers(MARKER_TYPE.frame);
-      }, 2500);
+        state.board.addMarker(MARKER_TYPE.frame, moves[0].from);
+        state.board.addMarker(MARKER_TYPE.frame, moves[0].to);
+        setTimeout(() => {
+          try { state.board.removeMarkers(MARKER_TYPE.frame); } catch (_) {}
+        }, 3500);
+      }
+    }
+  } else {
+    if (nextBtn) {
+      nextBtn.disabled = false;
+      nextBtn.textContent = "Tell me more";
     }
   }
+}
+
+function advanceHintLadder() {
+  if (state.hintStepIndex < state.hintLadderSteps.length - 1) {
+    state.hintStepIndex++;
+    renderHintLadderStep();
+  }
+}
+
+function closeHintLadder() {
+  const ladder = document.getElementById("hintLadder");
+  if (ladder) ladder.hidden = true;
+  state.hintStepIndex = 0;
+  state.hintLadderSteps = [];
+  try { state.board.removeMarkers(MARKER_TYPE.frame); } catch (_) {}
 }
 
 // ---------- Event bindings ----------
@@ -993,6 +1158,61 @@ document.getElementById("btnPlayAgain").addEventListener("click", () => startGam
 document.getElementById("btnNewOpening").addEventListener("click", () => showPanel("openings"));
 document.getElementById("btnSwitch").addEventListener("click", () => showPanel("openings"));
 document.getElementById("btnPickOpening").addEventListener("click", () => showPanel("openings"));
+
+// --- Round 3: Hint ladder buttons ---
+const btnHintNextEl = document.getElementById("btnHintNext");
+if (btnHintNextEl) btnHintNextEl.addEventListener("click", advanceHintLadder);
+const btnHintCloseEl = document.getElementById("btnHintClose");
+if (btnHintCloseEl) btnHintCloseEl.addEventListener("click", closeHintLadder);
+
+// --- Round 3: Overflow menu (Switch opening / End session) ---
+const btnOverflowEl = document.getElementById("btnOverflow");
+const overflowMenuEl = document.getElementById("overflowMenu");
+if (btnOverflowEl && overflowMenuEl) {
+  btnOverflowEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = !overflowMenuEl.hidden;
+    overflowMenuEl.hidden = isOpen;
+    btnOverflowEl.setAttribute("aria-expanded", String(!isOpen));
+  });
+  // Close when clicking anywhere else
+  document.addEventListener("click", (e) => {
+    if (overflowMenuEl.hidden) return;
+    if (e.target === btnOverflowEl || btnOverflowEl.contains(e.target)) return;
+    if (overflowMenuEl.contains(e.target)) {
+      // let menu items run their handlers, then close
+      overflowMenuEl.hidden = true;
+      btnOverflowEl.setAttribute("aria-expanded", "false");
+      return;
+    }
+    overflowMenuEl.hidden = true;
+    btnOverflowEl.setAttribute("aria-expanded", "false");
+  });
+  // Esc closes
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !overflowMenuEl.hidden) {
+      overflowMenuEl.hidden = true;
+      btnOverflowEl.setAttribute("aria-expanded", "false");
+    }
+  });
+}
+
+// --- Round 3: Tooltip tap handler (mobile-friendly) ---
+// Hover works on desktop via CSS; tap toggles .tt-open for touch devices
+document.addEventListener("click", (e) => {
+  const term = e.target.closest(".term");
+  if (term) {
+    // Toggle just this term; close any other open tooltips
+    document.querySelectorAll(".term.tt-open").forEach((t) => {
+      if (t !== term) t.classList.remove("tt-open");
+    });
+    term.classList.toggle("tt-open");
+    e.stopPropagation();
+    return;
+  }
+  // Click outside closes any open tooltip
+  document.querySelectorAll(".term.tt-open").forEach((t) => t.classList.remove("tt-open"));
+});
 
 // Overlay toggles
 const btnCenter = document.getElementById("btnOverlayCenter");

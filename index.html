@@ -58,7 +58,7 @@
 
           <div class="hero-ctas">
             <button class="btn-primary btn-lg" id="btnStartLesson" type="button">Start a guided lesson</button>
-            <button class="btn-ghost btn-lg" id="btnPickOpening" type="button">Pick a different opening</button>
+            <button class="btn-ghost btn-lg" id="btnPickOpening" type="button">Browse openings</button>
           </div>
 
           <p class="hero-trust">
@@ -108,10 +108,15 @@
 
           <div class="hero-board-footer">
             <div class="board-actions">
-              <button class="btn-ghost btn-sm" id="btnUndo" type="button" disabled>Undo</button>
-              <button class="btn-ghost btn-sm" id="btnHint" type="button">Hint</button>
-              <button class="btn-ghost btn-sm" id="btnSwitch" type="button">Switch opening</button>
-              <button class="btn-primary btn-sm" id="btnResign" type="button">End session</button>
+              <button class="btn-primary btn-sm" id="btnHint" type="button">Hint</button>
+              <button class="btn-ghost btn-sm" id="btnUndo" type="button" disabled>Take back</button>
+              <div class="board-overflow">
+                <button class="overflow-trigger" id="btnOverflow" type="button" aria-haspopup="true" aria-expanded="false" aria-label="More actions">⋯</button>
+                <div class="overflow-menu" id="overflowMenu" role="menu" hidden>
+                  <button class="overflow-item" id="btnSwitch" type="button" role="menuitem">Switch opening</button>
+                  <button class="overflow-item overflow-item-danger" id="btnResign" type="button" role="menuitem">End session</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -127,7 +132,7 @@
             </div>
             <div>
               <p class="coach-name">Coach</p>
-              <p class="coach-status" id="coachStatus">Waking up…</p>
+              <p class="coach-status" id="coachStatus">Loading engine…</p>
             </div>
           </div>
 
@@ -135,10 +140,56 @@
             <p class="coach-message" id="coachMessage">
               Make a move when you're ready. I'll tell you what it does, what it costs, and what to watch for next.
             </p>
-            <div class="coach-meta" id="coachMeta" hidden>
-              <span class="badge" id="coachBadge">Book</span>
-              <span class="coach-eval" id="coachEval"></span>
+
+            <!-- Two axes: Theory status (book/off-book) + Quality verdict -->
+            <div class="coach-axes" id="coachAxes" hidden>
+              <div class="axis">
+                <span class="axis-label">
+                  <span class="term" data-term="theory">Theory<span class="tt">Established opening lines that strong players have analyzed for decades.</span></span>
+                </span>
+                <span class="axis-value" id="axisTheory">—</span>
+              </div>
+              <div class="axis">
+                <span class="axis-label">Quality</span>
+                <span class="axis-value" id="axisQuality">—</span>
+              </div>
             </div>
+
+            <!-- 4-dimension rubric: Center / Development / King safety / Tempo -->
+            <div class="rubric" id="rubric" hidden>
+              <div class="rubric-row" data-dim="center">
+                <span class="rubric-name">Center</span>
+                <span class="rubric-score" id="rubCenter">0</span>
+              </div>
+              <div class="rubric-row" data-dim="development">
+                <span class="rubric-name">Development</span>
+                <span class="rubric-score" id="rubDevelopment">0</span>
+              </div>
+              <div class="rubric-row" data-dim="king-safety">
+                <span class="rubric-name">King safety</span>
+                <span class="rubric-score" id="rubKingSafety">0</span>
+              </div>
+              <div class="rubric-row" data-dim="tempo">
+                <span class="rubric-name">
+                  <span class="term" data-term="tempo">Tempo<span class="tt">A unit of time in chess. Spending a tempo means using a move. Good moves usually do more than one job per tempo.</span></span>
+                </span>
+                <span class="rubric-score" id="rubTempo">0</span>
+              </div>
+            </div>
+
+            <!-- Narrative lines: plan fit + what it costs + Black's reply -->
+            <dl class="coach-narrative" id="coachNarrative" hidden>
+              <div class="narrative-row" id="narrPlanRow" hidden>
+                <dt>Plan fit</dt><dd id="narrPlan">—</dd>
+              </div>
+              <div class="narrative-row" id="narrCostRow" hidden>
+                <dt>What this costs</dt><dd id="narrCost">—</dd>
+              </div>
+              <div class="narrative-row" id="narrBlackRow" hidden>
+                <dt>Black's reply</dt><dd id="narrBlack">—</dd>
+              </div>
+            </dl>
+
             <ul class="coach-concepts" id="coachConcepts" aria-label="Principles touched by this move"></ul>
           </div>
 
@@ -152,6 +203,16 @@
           <div class="coach-alternatives" id="coachAlternatives" hidden>
             <p class="alts-label">Other ideas at this moment</p>
             <ul class="alts-list" id="altsList"></ul>
+          </div>
+
+          <!-- Progressive hint ladder (shown when Hint is pressed) -->
+          <div class="hint-ladder" id="hintLadder" hidden>
+            <div class="hint-ladder-header">
+              <span class="hint-ladder-label">Coaching hint</span>
+              <button class="hint-close" id="btnHintClose" type="button" aria-label="Close hint">×</button>
+            </div>
+            <ol class="hint-steps" id="hintSteps"></ol>
+            <button class="hint-next" id="btnHintNext" type="button">Tell me more</button>
           </div>
         </aside>
       </section>
@@ -187,6 +248,12 @@
             <p class="qblock-label">What to remember next time</p>
             <p class="qblock-body" id="qLesson">—</p>
           </div>
+        </div>
+
+        <!-- One-sentence rule — the takeaway the user carries into the next game -->
+        <div class="takeaway-rule" id="takeawayRule" hidden>
+          <p class="takeaway-label">One rule for next time</p>
+          <p class="takeaway-body" id="takeawayBody">—</p>
         </div>
 
         <div class="summary-stats">
@@ -227,7 +294,7 @@
       <section id="how" class="panel how preplay-only">
         <div class="section-head">
           <p class="eyebrow">How it works</p>
-          <h2>Five moves, five things to notice.</h2>
+          <h2>What happens each session.</h2>
         </div>
         <ol class="how-steps">
           <li>
@@ -241,7 +308,7 @@
             <span class="how-num">2</span>
             <div>
               <h3>Get a verdict</h3>
-              <p>Book, playable, inaccuracy, mistake, or blunder — based on theory <em>and</em> what Stockfish thinks.</p>
+              <p>Two axes, plain English. <span class="term" data-term="book">Theory<span class="tt">A known move from established opening theory.</span></span> status plus a quality read — Strong, Playable, Inaccuracy, Mistake, or Blunder.</p>
             </div>
           </li>
           <li>
