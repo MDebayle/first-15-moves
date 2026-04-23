@@ -131,7 +131,15 @@ const state = {
   hintLadderSteps: [],
   // Scorecard state
   ranker: null,            // Ranker instance (its own Stockfish worker)
-  moveRanks: [],           // [{ whiteMoveIndex: 1..15, rank, total, medal }]
+  moveRanks: [],           // [{ whiteMoveIndex: 1..15, rank, total, medal, assisted }]
+  // Assist tracking for medal streaks. Flags are set by showHint()/undoLast()
+  // and cleared after each student move commits. A move is "assisted" if
+  // either flag was set at commit time — assisted moves get a rank but NOT
+  // a medal, and they break any active streak.
+  hintUsedThisTurn: false,
+  takeBackUsedThisTurn: false,
+  medalStreak: 0,          // count of consecutive medal-earning moves (unassisted)
+  maxMedalStreak: 0,       // highest streak reached this session (for future use)
 };
 
 // ---------- Panels ----------
@@ -252,6 +260,61 @@ function rankToMedal(rank) {
   return null;
 }
 
+// ---------- Medal streak tracking ----------
+// A medal streak counts consecutive unassisted medal-earning moves. Assisted
+// moves (hint or take-back used that turn) and non-medal finishes both break
+// the streak. The UI banner shows at streak >= 3 and escalates as it grows.
+function updateMedalStreak(earnedMedal) {
+  if (earnedMedal) {
+    state.medalStreak = (state.medalStreak || 0) + 1;
+    if (state.medalStreak > (state.maxMedalStreak || 0)) {
+      state.maxMedalStreak = state.medalStreak;
+    }
+  } else {
+    state.medalStreak = 0;
+  }
+  renderStreakBanner();
+}
+
+// Copy for the streak banner. Stays short (fits next to the SAN + rank) and
+// always mentions "unassisted" — that's the whole point: this reward is
+// reserved for players who didn't lean on the Hint or Take Back buttons.
+function streakCopy(n) {
+  if (n === 3) return "3 in a row \u2014 unassisted";
+  if (n === 4) return "4-move streak \u2014 unassisted";
+  if (n === 5) return "5 flawless, unassisted";
+  if (n === 6) return "6 straight, zero assists";
+  if (n === 7) return "7 in a row, all your own";
+  if (n >= 8) return n + " straight \u2014 unassisted";
+  return "";
+}
+
+// Paint or hide the streak banner based on state.medalStreak. Called from
+// updateMedalStreak(), showHint() (to hide when streak breaks), and
+// renderCoach() (to re-apply when the verdict card re-renders).
+function renderStreakBanner() {
+  const el = document.getElementById("verdictStreak");
+  const txt = document.getElementById("verdictStreakText");
+  if (!el || !txt) return;
+  const n = state.medalStreak || 0;
+  if (n < 3) {
+    el.hidden = true;
+    el.classList.remove("verdict-streak-arrive", "verdict-streak-hot");
+    return;
+  }
+  txt.textContent = streakCopy(n);
+  el.dataset.streak = String(n);
+  // "Hot" treatment kicks in at 5+ — slightly warmer tone to signal
+  // the streak is getting real. Keeps the aesthetic restrained below that.
+  if (n >= 5) el.classList.add("verdict-streak-hot");
+  else el.classList.remove("verdict-streak-hot");
+  el.hidden = false;
+  // Re-trigger the arrival animation on each new tier.
+  el.classList.remove("verdict-streak-arrive");
+  void el.offsetWidth;
+  el.classList.add("verdict-streak-arrive");
+}
+
 // Fill a per-move cell (index 1..15) with rank info.
 // Small visual fanfare when a medal lands in the scorecard. Adds a transient
 // CSS class that drives a pop+glow+starburst animation — gold gets the full
@@ -271,12 +334,15 @@ function flourishScorecardCell(whiteMoveIndex, medal) {
   setTimeout(() => cell.classList.remove(tier), ms);
 }
 
-function paintScorecardCell(whiteMoveIndex, rank, total) {
+// Paint a per-move cell. If `explicitMedal` is provided (including null), it
+// overrides the rank-to-medal conversion — callers pass null to withhold a
+// medal on assisted moves while still showing the numeric rank.
+function paintScorecardCell(whiteMoveIndex, rank, total, explicitMedal) {
   const grid = document.getElementById("scorecardGrid");
   if (!grid) return;
   const cell = grid.querySelector(`[data-cell="${whiteMoveIndex}"]`);
   if (!cell) return;
-  const medal = rankToMedal(rank);
+  const medal = explicitMedal === undefined ? rankToMedal(rank) : explicitMedal;
 
   cell.classList.remove("empty");
   cell.classList.add("filled");
@@ -290,6 +356,9 @@ function paintScorecardCell(whiteMoveIndex, rank, total) {
     cell.innerHTML = `<span class="cell-index">${whiteMoveIndex}</span>${MEDAL_SVG[medal]}`;
     cell.setAttribute("aria-label", `Move ${whiteMoveIndex}: ${medal} medal (rank ${rank} of ${total})`);
   } else {
+    // Rank-only path. Covers both medal-worthy ranks on assisted moves and
+    // ordinary non-medal ranks. Same visual treatment either way — what
+    // makes assisted moves feel different is the absence of the medal.
     if (rankEl) rankEl.textContent = ordinal(rank);
     if (ofEl) ofEl.textContent = `/ ${total}`;
     cell.setAttribute("aria-label", `Move ${whiteMoveIndex}: ranked ${rank} of ${total}`);
@@ -348,7 +417,7 @@ function ordinal(n) {
 // Kick off a non-blocking rank analysis for a move that was just played.
 // Updates the scorecard cell in place when the analysis returns. Does NOT
 // block the main critique/engine-reply pipeline.
-async function analyzeMoveRank({ whiteMoveIndex, fenBefore, uciMove }) {
+async function analyzeMoveRank({ whiteMoveIndex, fenBefore, uciMove, assisted = false }) {
   if (!state.ranker) return;
   let ranked;
   try {
@@ -381,15 +450,26 @@ async function analyzeMoveRank({ whiteMoveIndex, fenBefore, uciMove }) {
   const whiteMovesPlayed = Math.ceil(state.ply / 2);
   if (whiteMoveIndex > whiteMovesPlayed) return;
 
-  // Persist
-  state.moveRanks.push({ whiteMoveIndex, rank, total, medal: rankToMedal(rank) });
+  // Medal gating. A move earns a medal only when the player didn't use the
+  // Hint or Take Back buttons on that turn — assisted moves still get their
+  // numeric rank shown, but the medal slot stays empty. This keeps the
+  // scorecard honest and makes unassisted medal streaks feel earned.
+  const earnedMedal = assisted ? null : rankToMedal(rank);
 
-  // Paint the cell with a small arrival flourish (stronger for gold).
-  paintScorecardCell(whiteMoveIndex, rank, total);
-  flourishScorecardCell(whiteMoveIndex, rankToMedal(rank));
+  // Persist
+  state.moveRanks.push({ whiteMoveIndex, rank, total, medal: earnedMedal, assisted });
+
+  // Paint the cell. paintScorecardCell takes the medal explicitly so it
+  // can fall back to the numeric rank when medal is null.
+  paintScorecardCell(whiteMoveIndex, rank, total, earnedMedal);
+  if (earnedMedal) flourishScorecardCell(whiteMoveIndex, earnedMedal);
 
   // Update the verdict card in-place (medal icon + "2nd best of 29" label)
   try { renderVerdictRank(whiteMoveIndex); } catch (_) { /* best-effort */ }
+
+  // Update the medal streak. Only UNASSISTED medal-earning moves count; a
+  // non-medal finish, an assisted move, or a take-back all break the streak.
+  updateMedalStreak(earnedMedal);
 
   // Engine vs. plan reconciler. When the scorecard and the coach disagree
   // (medal-worthy rank but "Off plan"/"Drifts from plan"/"Abandons plan"
@@ -529,6 +609,10 @@ async function startGame(openingId) {
   state.coachOff = false; // set true when user chooses "Continue without coach"
   state.moveRanks = [];
   state._lastLegalCount = null;
+  state.hintUsedThisTurn = false;
+  state.takeBackUsedThisTurn = false;
+  state.medalStreak = 0;
+  state.maxMedalStreak = 0;
 
   // Reset the scorecard grid to 16 empty cells.
   renderScorecardShell();
@@ -633,6 +717,13 @@ function resetCoachPanel() {
   if (sanEl) sanEl.textContent = "—";
   const rankEl = document.getElementById("verdictRank");
   if (rankEl) { rankEl.textContent = "—"; rankEl.dataset.rankReady = "0"; }
+  // Streak banner resets with the rest of the verdict. It will re-render on
+  // the next move commit through renderStreakBanner().
+  const streakEl = document.getElementById("verdictStreak");
+  if (streakEl) {
+    streakEl.hidden = true;
+    streakEl.classList.remove("verdict-streak-arrive", "verdict-streak-hot");
+  }
 
   // Reset the "your move" card to the opening prompt.
   renderCoachPrompt(0);
@@ -705,8 +796,17 @@ async function commitStudentMove(moveSpec) {
   const legalBefore = state.chess.moves();
   state._lastLegalCount = legalBefore.length;
 
+  // Snapshot assist flags BEFORE clearing them. If either was set during
+  // this turn, the resulting move is "assisted" and won't be awarded a medal.
+  const assisted = state.hintUsedThisTurn || state.takeBackUsedThisTurn;
+
   const moveObj = state.chess.move(moveSpec);
   if (!moveObj) return;
+
+  // Per-turn assist flags reset the moment a move commits. The next turn
+  // starts from a clean slate unless the player clicks Hint or Take Back.
+  state.hintUsedThisTurn = false;
+  state.takeBackUsedThisTurn = false;
 
   state.ply++;
   const ply = state.ply;
@@ -720,8 +820,9 @@ async function commitStudentMove(moveSpec) {
   const whiteMoveIndex = Math.ceil(ply / 2);
   if (!state.coachOff && whiteMoveIndex >= 1 && whiteMoveIndex <= 15) {
     const uciMove = moveObj.from + moveObj.to + (moveObj.promotion || "");
-    // Intentionally un-awaited:
-    analyzeMoveRank({ whiteMoveIndex, fenBefore: fenBeforeMove, uciMove })
+    // Intentionally un-awaited. We pass the assisted flag so the ranker can
+    // withhold the medal while still recording the numeric rank.
+    analyzeMoveRank({ whiteMoveIndex, fenBefore: fenBeforeMove, uciMove, assisted })
       .catch((e) => console.warn("[scorecard] background rank error:", e));
   }
 
@@ -1083,6 +1184,12 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
   }
 
   if (card) card.hidden = false;
+
+  // Re-apply the streak banner state on this render. The banner's content
+  // is driven by state.medalStreak, which updateMedalStreak() mutates as
+  // analysis resolves; this call makes sure the card shows the current
+  // value immediately rather than waiting for the next streak change.
+  renderStreakBanner();
 
   // Close any open hint ladder when a move is played
   const ladder = document.getElementById("hintLadder");
@@ -1893,6 +2000,14 @@ function prettyConceptForStat(tag) {
 // ---------- Actions ----------
 function undoLast() {
   if (state.history.length === 0) return;
+  // Mark this turn as assisted — the redo that follows won't earn a medal,
+  // and any active streak breaks immediately.
+  state.takeBackUsedThisTurn = true;
+  if (state.medalStreak > 0) {
+    state.medalStreak = 0;
+    // The verdict card resets below, which also hides the streak banner,
+    // so we don't need a separate renderStreakBanner() call here.
+  }
   const last = state.history[state.history.length - 1];
   state.chess.undo();
   state.history.pop();
@@ -1924,6 +2039,13 @@ function undoLast() {
 async function showHint() {
   if (state.inputLocked) return;
   if (state.chess.turn() !== "w") return;
+  // Mark this turn as assisted. Any medal earned on the next commit will
+  // be withheld, and an active medal streak breaks immediately.
+  state.hintUsedThisTurn = true;
+  if (state.medalStreak > 0) {
+    state.medalStreak = 0;
+    renderStreakBanner();
+  }
   setCoachStatus("Looking for a hint…");
 
   // Get engine's best pick if we can (for level 4 of the ladder)

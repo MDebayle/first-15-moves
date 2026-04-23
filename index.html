@@ -248,6 +248,12 @@
                   <span class="verdict-san" id="verdictSan">—</span>
                   <span class="verdict-rank" id="verdictRank">—</span>
                 </div>
+                <!-- Streak banner: appears only when the player has 3+ consecutive
+                     unassisted medals. Hidden at 0-2 and whenever a streak breaks. -->
+                <span class="verdict-streak" id="verdictStreak" hidden aria-live="polite">
+                  <span class="verdict-streak-flame" aria-hidden="true">&#9733;</span>
+                  <span class="verdict-streak-text" id="verdictStreakText"></span>
+                </span>
               </header>
               <p class="verdict-effect" id="verdictEffect">—</p>
               <p class="verdict-cost" id="verdictCost" hidden>—</p>

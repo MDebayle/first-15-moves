@@ -1523,6 +1523,60 @@ body.has-played .preplay-only { display: none; }
 }
 .verdict-axes[hidden] { display: none; }
 
+/* ---------- Streak banner ----------
+   Sits at the right of .verdict-head. Shows only at streak >= 3. Sage
+   treatment at 3-4, warmer clay-tinted "hot" treatment at 5+. The arrival
+   animation runs once when the streak tier advances. */
+.verdict-streak {
+  margin-left: auto;       /* push to the right side of the flex head */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  background: var(--sage-100, #e7f0ec);
+  color: var(--sage-900, #1f4a3b);
+  border: 1px solid var(--sage-300, #b6d0c3);
+  white-space: nowrap;
+  /* Small shadow gives the pill a little lift without being loud. */
+  box-shadow: 0 1px 0 rgba(31, 74, 59, 0.04);
+}
+.verdict-streak[hidden] { display: none; }
+.verdict-streak-flame {
+  font-size: 0.85rem;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+.verdict-streak-hot {
+  background: linear-gradient(135deg, #fff4e0 0%, #ffe3b5 100%);
+  color: var(--clay-900, #6b2e17);
+  border-color: #f1c98a;
+}
+.verdict-streak-hot .verdict-streak-flame { color: #c76a1b; }
+@keyframes verdict-streak-pop {
+  0%   { transform: scale(0.8); opacity: 0; }
+  60%  { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.verdict-streak-arrive {
+  animation: verdict-streak-pop 420ms cubic-bezier(.2,.7,.2,1.1);
+}
+/* Tighten layout on narrow screens — let the pill wrap below SAN+rank if
+   things get cramped rather than truncating the text. */
+@media (max-width: 540px) {
+  .verdict-head { flex-wrap: wrap; }
+  .verdict-streak {
+    margin-left: 0;
+    flex-basis: 100%;
+    justify-content: flex-start;
+    margin-top: 4px;
+  }
+}
+
 /* ---------- Section B: Your move card ---------- */
 .your-move {
   border-left: 3px solid var(--sage-500, #2f6b5a);
