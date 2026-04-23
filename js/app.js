@@ -1241,7 +1241,10 @@ document.getElementById("btnResign").addEventListener("click", endSession);
 document.getElementById("btnPlayAgain").addEventListener("click", () => startGame(state.openingId));
 document.getElementById("btnNewOpening").addEventListener("click", () => showPanel("openings"));
 document.getElementById("btnSwitch").addEventListener("click", () => showPanel("openings"));
-document.getElementById("btnPickOpening").addEventListener("click", () => showPanel("openings"));
+const btnPickOpeningEl = document.getElementById("btnPickOpening");
+if (btnPickOpeningEl) btnPickOpeningEl.addEventListener("click", () => showPanel("openings"));
+const btnPickOpeningNavEl = document.getElementById("btnPickOpeningNav");
+if (btnPickOpeningNavEl) btnPickOpeningNavEl.addEventListener("click", () => showPanel("openings"));
 
 // --- Help modal (replaces the dead "Openings" top-right link) ---
 const helpModalEl = document.getElementById("helpModal");

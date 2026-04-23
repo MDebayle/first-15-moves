@@ -41,6 +41,7 @@
       </a>
       <h1 class="header-tagline">Master the first 15 moves of chess.</h1>
       <nav class="site-nav">
+        <button class="nav-btn nav-btn-browse" id="btnPickOpeningNav" type="button">Browse openings</button>
         <button class="nav-btn" id="btnHelp" type="button" aria-haspopup="dialog" aria-controls="helpModal">Help</button>
       </nav>
     </header>
@@ -78,27 +79,65 @@
         </section>
 
         <section class="help-section">
-          <h3>Why these three openings?</h3>
-          <p>We picked three openings that cover the three most useful White setups a beginner or intermediate player will ever see. If you understand these, you have a real answer to almost any game.</p>
+          <h3>Why these five openings?</h3>
+          <p>The five openings below cover the complete White curriculum — from your first opening to tournament-ready weapons. Learn them in order and you'll have a real answer to almost any game.</p>
+
+          <p class="help-group-label">Beginner-friendly</p>
           <ul class="help-list help-openings">
             <li>
               <p class="help-opening-name">Italian Game <span class="help-opening-eco">C50</span></p>
-              <p>The classic <strong>1.e4 e5</strong> opening. Directly claims the center, develops pieces toward the king, and teaches every core principle in its purest form. Still played at the top level 500 years after it was first written down.</p>
-            </li>
-            <li>
-              <p class="help-opening-name">Queen's Gambit Declined <span class="help-opening-eco">D30</span></p>
-              <p>The classic <strong>1.d4</strong> opening. A solid, strategic setup where both sides fight for the center with pawns. Famously popular at world championship level — the “queen's pawn” answer to e4 aggression.</p>
+              <p>The classic <strong>1.e4 e5</strong> opening. Directly claims the center, develops pieces toward the king, and teaches every core principle in its purest form.</p>
             </li>
             <li>
               <p class="help-opening-name">London System <span class="help-opening-eco">D02</span></p>
-              <p>A setup-based opening: you play the same healthy piece arrangement against almost anything Black does. Low on memorization, high on understanding — a great first “real” opening to own.</p>
+              <p>A setup-based opening: you play the same healthy piece arrangement against almost anything Black does. Low on memorization, high on understanding.</p>
+            </li>
+          </ul>
+
+          <p class="help-group-label">Classical &amp; strategic</p>
+          <ul class="help-list help-openings">
+            <li>
+              <p class="help-opening-name">Queen's Gambit Declined <span class="help-opening-eco">D30</span></p>
+              <p>The classic <strong>1.d4</strong> opening. A solid, strategic setup where both sides fight for the center with pawns — famously popular at world-championship level.</p>
+            </li>
+            <li>
+              <p class="help-opening-name">Ruy Lopez <span class="help-opening-eco">C84</span></p>
+              <p>The Spanish Game — the deepest and most respected 1.e4 e5 opening. A natural next step after the Italian, and a masterclass in slow, positional pressure.</p>
+            </li>
+          </ul>
+
+          <p class="help-group-label">Flexible hypermodern</p>
+          <ul class="help-list help-openings">
+            <li>
+              <p class="help-opening-name">English Opening <span class="help-opening-eco">A29</span></p>
+              <p>Control the center from the flank with <strong>1.c4</strong>. A hypermodern weapon that transposes into dozens of systems — favored by Botvinnik, Kasparov, and Carlsen.</p>
             </li>
           </ul>
         </section>
 
         <section class="help-section">
+          <h3>Reading the coach panel</h3>
+          <p>After each of your moves, the coach scores it on two independent axes so you know <em>both</em> how principled the move was and how it compares to established theory.</p>
+          <ul class="help-list">
+            <li><strong>Quality</strong> — Was the move sound? This is based on the engine's evaluation, regardless of whether it's a known theory move. A great move that nobody has ever played still scores high here.</li>
+            <li><strong>Theory</strong> — Did your move match the main line of the opening you're studying? “In theory” means yes. “Off theory” just means you left the book — not that you played badly.</li>
+          </ul>
+          <p>Below those, a four-pill <strong>rubric</strong> tracks the four things a good opening move should do: <strong>Center</strong> control, <strong>Development</strong>, <strong>King safety</strong>, and <strong>Tempo</strong>. Each pill lights up when your move earns it.</p>
+        </section>
+
+        <section class="help-section">
+          <h3>When do you “know” an opening?</h3>
+          <p>You don't need to memorize 20 moves deep. You're ready to move on when the first 8–10 moves feel automatic <em>and</em> you can say out loud what each one is trying to do. That's when the principles have sunk in. Then pick the next opening and repeat.</p>
+        </section>
+
+        <section class="help-section">
+          <h3>What about playing Black?</h3>
+          <p>For now, every opening here is studied from the <strong>White</strong> side — you're always the one making the first move. Black-side curricula (the Sicilian, the Caro-Kann, the Slav, and more) are coming soon.</p>
+        </section>
+
+        <section class="help-section">
           <h3>Where does opening theory come from?</h3>
-          <p>Every move in a known opening has been tested in thousands — sometimes millions — of games by strong human players and, more recently, by chess engines analyzing billions of positions per second. The mainline is the move that has, over time, proven to give the best results. When you play a mainline move, you're standing on hundreds of years of accumulated analysis.</p>
+          <p>Every move in a known opening has been tested in thousands — sometimes millions — of games by strong human players and, more recently, by chess engines analyzing billions of positions per second. The mainline is the move that has, over time, proven to give the best results. When you play a mainline move, you're standing on centuries of accumulated analysis.</p>
           <p>That's why the coach says “theory” rather than “correct.” Theory isn't the <em>only</em> good move — it's the most battle-tested one.</p>
         </section>
 
@@ -114,8 +153,11 @@
         <div class="hero-board" id="hero-board">
           <div class="hero-board-header">
             <div class="hero-board-meta">
-              <h2 class="opening-title" id="openingTitle">Italian Game</h2>
-              <span class="eco-chip" id="openingEco">C50</span>
+              <span class="now-learning-label" aria-hidden="true">Now learning</span>
+              <div class="hero-board-title-row">
+                <h2 class="opening-title" id="openingTitle">Italian Game</h2>
+                <span class="eco-chip" id="openingEco">C50</span>
+              </div>
             </div>
             <div class="hero-board-header-right">
               <div class="phase-chip" id="phaseChip" aria-live="polite">
@@ -123,7 +165,6 @@
                 <span class="phase-chip-divider" aria-hidden="true">·</span>
                 <span class="phase-chip-stage" id="phaseStage">Claim the center</span>
               </div>
-              <button class="board-chip-browse" id="btnPickOpening" type="button">Browse openings</button>
             </div>
           </div>
 
@@ -156,11 +197,8 @@
             </div>
           </div>
 
-          <!-- Caption row: subhead + trust + roadmap, muted, under the board -->
+          <!-- Caption row: trust + roadmap, muted, under the board. Tagline moved into picker panel. -->
           <div class="board-caption preplay-only">
-            <p class="board-caption-lede">
-              Play real openings, get plain-English feedback after every move, and learn the principles that make early moves <em>strong</em>.
-            </p>
             <div class="board-caption-meta">
               <span class="board-caption-trust">
                 <span class="trust-dot" aria-hidden="true"></span>
@@ -289,7 +327,8 @@
         <div class="section-head">
           <p class="eyebrow">Openings</p>
           <h2>Pick an opening to study</h2>
-          <p class="section-sub">You'll play the White pieces through move 15 and get feedback on every move.</p>
+          <p class="section-sub">The first 10–15 moves decide more games than you'd think. Every opening below is a battle-tested plan played at world-championship level. Pick one and stop drifting — learn the exact moves that win positions before the middlegame even starts.</p>
+          <p class="section-sub-meta">You'll play the White pieces through move 15 and get plain-English feedback on every move.</p>
         </div>
         <div class="opening-cards" id="openingCards">
           <!-- injected by JS -->

@@ -99,6 +99,95 @@ export const OPENINGS = {
     replyPolicy: "mainline-then-engine",
   },
 
+  ruyLopez: {
+    id: "ruyLopez",
+    name: "Ruy Lopez",
+    eco: "C84",
+    side: "white",
+    tagline: "The Spanish Game. Chess's richest classical opening.",
+    difficulty: "Intermediate",
+    intro:
+      "The Ruy Lopez, also called the Spanish Game, is the deepest and most respected 1.e4 e5 opening — played at the top of every world championship for over a century. White's bishop goes straight to b5 to pressure Black's knight and fight for the center. It's a masterclass in slow, strategic pressure.",
+    principles: [
+      "Pin Black's defender of e5 with Bb5.",
+      "Don't rush tactics \u2014 the Ruy is a long strategic squeeze.",
+      "Prepare c3 and d4 to build a strong pawn center.",
+      "Castle early, then reroute the light-squared bishop along the a2\u2013g8 diagonal.",
+    ],
+    mainline: ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7", "Re1", "b5", "Bb3", "d6", "c3", "O-O"],
+    alternatives: {
+      1: [
+        { san: "d4", label: "playable", why: "A perfectly good opening \u2014 you just head into Queen's Pawn territory instead of the Spanish we're studying.", concepts: ["center", "flexible"] },
+        { san: "c4", label: "playable", why: "The English Opening \u2014 solid but takes us away from the Ruy Lopez.", concepts: ["center", "flank"] },
+        { san: "Nf3", label: "playable", why: "A flexible developer, but the Ruy wants e4 first to stake the center.", concepts: ["development"] },
+        { san: "a4", label: "mistake", why: "A flank pawn move that doesn't help develop or control the center.", concepts: ["center", "tempo"] },
+      ],
+      3: [
+        { san: "Bc4", label: "playable", why: "That's the Italian \u2014 a great opening, but in the Ruy we develop the knight first to pressure e5 before the bishop commits.", concepts: ["development"] },
+        { san: "Nc3", label: "playable", why: "Solid, but Nf3 is stronger here because it attacks e5 while developing.", concepts: ["development"] },
+        { san: "f4", label: "playable", why: "The King's Gambit \u2014 exciting and aggressive, but a completely different curriculum.", concepts: ["initiative", "king-safety"] },
+        { san: "Qh5", label: "mistake", why: "Bringing the queen out early invites Black to develop with tempo.", concepts: ["queen-early", "tempo"] },
+      ],
+      5: [
+        { san: "Bc4", label: "playable", why: "That's the Italian Game. In the Ruy the bishop aims at the knight on c6 to break up Black's center support.", concepts: ["development", "target-f7"] },
+        { san: "d4", label: "playable", why: "The Scotch Game \u2014 strong, but opens the center before developing. The Ruy prefers slow pressure with Bb5.", concepts: ["center"] },
+        { san: "Nc3", label: "playable", why: "Solid development, but Bb5 is the soul of the Ruy \u2014 it attacks Black's defender of e5.", concepts: ["development"] },
+      ],
+      7: [
+        { san: "Bxc6", label: "playable", why: "The Exchange Variation \u2014 a respectable sideline that damages Black's pawns but surrenders the bishop pair. The main line keeps the bishop.", concepts: ["pawn-structure"] },
+        { san: "Bc4", label: "inaccuracy", why: "Retreating to c4 wastes the tempo you spent on Bb5. Slide to a4 to keep pressure on c6 while staying on the long diagonal.", concepts: ["tempo"] },
+      ],
+      9: [
+        { san: "d4", label: "playable", why: "Too early \u2014 Black's Nxe4 counter is annoying. Castle first, then prepare d4 with c3.", concepts: ["center", "king-safety"] },
+        { san: "Nc3", label: "playable", why: "Solid, but castling first is cleaner \u2014 it gets the king safe before the center opens.", concepts: ["king-safety"] },
+        { san: "Bxc6", label: "playable", why: "The Exchange Variation one move later \u2014 still fine, just a different strategic plan than the Closed Ruy we're learning.", concepts: ["pawn-structure"] },
+      ],
+    },
+    replyPolicy: "mainline-then-engine",
+  },
+
+  english: {
+    id: "english",
+    name: "English Opening",
+    eco: "A29",
+    side: "white",
+    tagline: "Control the center from the flank. A flexible hypermodern weapon.",
+    difficulty: "Intermediate",
+    intro:
+      "The English Opening is a hypermodern weapon \u2014 instead of grabbing the center with a central pawn, White attacks it from the flank with c4. It's the most flexible opening in chess: you can transpose into dozens of systems, and the fianchettoed bishop on g2 gives you lasting pressure on the long diagonal. A favorite of world champions from Botvinnik to Carlsen.",
+    principles: [
+      "Hypermodern idea: control the center from the wings with pawns and pieces.",
+      "Fianchetto the king's bishop to g2 \u2014 it rakes the long diagonal.",
+      "Stay flexible \u2014 the English can transpose into many different structures.",
+      "Develop naturally: Nc3, Nf3, g3, Bg2, O-O, then decide your plan.",
+    ],
+    mainline: ["c4", "e5", "Nc3", "Nf6", "g3", "d5", "cxd5", "Nxd5", "Bg2", "Nb6", "Nf3", "Nc6", "O-O", "Be7", "d3", "O-O"],
+    alternatives: {
+      1: [
+        { san: "e4", label: "playable", why: "A classical choice \u2014 it just leads to e-pawn openings instead of the hypermodern English we're studying.", concepts: ["center"] },
+        { san: "d4", label: "playable", why: "A solid Queen's Pawn opening, but the English stakes the center from the flank instead \u2014 a completely different plan.", concepts: ["center"] },
+        { san: "Nf3", label: "playable", why: "The R\u00e9ti Opening \u2014 similar hypermodern ideas. c4 is the classical English move order.", concepts: ["development", "flank"] },
+        { san: "b3", label: "playable", why: "Larsen's Opening \u2014 another hypermodern try, but less ambitious than c4.", concepts: ["flank"] },
+      ],
+      3: [
+        { san: "Nf3", label: "playable", why: "A solid developer, but Nc3 is more thematic \u2014 it pressures Black's d5 square and supports a later e4 break.", concepts: ["development"] },
+        { san: "g3", label: "playable", why: "The fianchetto move order \u2014 perfectly playable. Nc3 first keeps the center tenser.", concepts: ["development"] },
+        { san: "d4", label: "playable", why: "Transposes into a Queen's Gambit line. Fine, but we're studying the pure English plan here.", concepts: ["center"] },
+      ],
+      5: [
+        { san: "e4", label: "playable", why: "Transposes into a King's Indian Attack structure \u2014 a different but playable plan. g3 keeps the classic English setup.", concepts: ["center"] },
+        { san: "e3", label: "playable", why: "The Bremen System \u2014 solid but passive. The fianchetto with g3 is more thematic and more ambitious.", concepts: ["development"] },
+        { san: "Nf3", label: "playable", why: "A natural developer. In the Reversed Dragon we want g3 first so the bishop can go to g2 cleanly.", concepts: ["development"] },
+      ],
+      7: [
+        { san: "Nf3", label: "playable", why: "A natural developer, but cxd5 first clarifies the center before Black can. That's the heart of the Reversed Dragon.", concepts: ["development"] },
+        { san: "Bg2", label: "playable", why: "Developing the fianchetto bishop is fine, but cxd5 first reaches the exact structure we want.", concepts: ["development"] },
+        { san: "d3", label: "inaccuracy", why: "Too passive in this position \u2014 Black's d5 push has challenged your c4 pawn. Resolve the tension with cxd5.", concepts: ["tempo", "center"] },
+      ],
+    },
+    replyPolicy: "mainline-then-engine",
+  },
+
   london: {
     id: "london",
     name: "London System",

@@ -169,6 +169,42 @@ em { font-style: italic; color: var(--ink-900); }
   color: var(--sage-900, #1f4a3e);
   outline: none;
 }
+.site-nav .nav-btn-browse {
+  background: var(--sage-500, #2f6b5a);
+  border-color: var(--sage-500, #2f6b5a);
+  color: #fff;
+}
+.site-nav .nav-btn-browse:hover,
+.site-nav .nav-btn-browse:focus-visible {
+  background: var(--sage-900, #1f4a3e);
+  border-color: var(--sage-900, #1f4a3e);
+  color: #fff;
+}
+
+/* "Now learning" eyebrow above the current opening title on the board */
+.now-learning-label {
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--sage-700, #2f6b5a);
+  margin-bottom: 4px;
+}
+.hero-board-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* Secondary meta paragraph under the main picker tagline */
+.section-sub-meta {
+  color: var(--ink-500);
+  font-size: 0.86rem;
+  margin: var(--space-3) 0 0;
+  opacity: 0.85;
+}
 
 @media (max-width: 900px) {
   .header-tagline { font-size: 1rem; padding-left: var(--space-3); }
@@ -1677,6 +1713,14 @@ body.has-played .preplay-only { display: none; }
 .help-section p:last-child { margin-bottom: 0; }
 .help-section p strong { color: var(--sage-900, #1f4a3e); font-weight: 600; }
 .help-section p em { font-style: italic; color: var(--ink-900); }
+.help-group-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--sage-700, #2f6b5a);
+  margin: var(--space-3) 0 var(--space-2);
+}
 
 .help-list {
   margin: 0;
