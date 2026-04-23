@@ -116,13 +116,15 @@ export function rubricClass(score) {
 // Axes
 // ============================================================
 
+// User-facing "Quality" axis labels — these describe curriculum PLAN-FIT, not
+// engine strength. A move can be engine-strong and still read "Off plan" here.
 const QUALITY_LABEL = {
   book: "Strong",
   good: "Good",
   playable: "Playable",
-  inaccuracy: "Inaccuracy",
-  mistake: "Mistake",
-  blunder: "Blunder",
+  inaccuracy: "Off plan",
+  mistake: "Drifts from plan",
+  blunder: "Abandons plan",
 };
 
 export function computeAxes(verdict) {

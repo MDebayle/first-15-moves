@@ -378,6 +378,75 @@ async function analyzeMoveRank({ whiteMoveIndex, fenBefore, uciMove }) {
   // Paint the cell and, if gold, play the cheer.
   paintScorecardCell(whiteMoveIndex, rank, total);
   if (rank === MEDAL_RANK_GOLD) playGoldClap();
+
+  // Engine vs. plan reconciler. When the scorecard and the coach disagree
+  // (medal-worthy rank but "Off plan"/"Drifts from plan"/"Abandons plan"
+  // classification), append a single teaching sentence to the coach message
+  // so the apparent contradiction becomes informative instead of confusing.
+  try {
+    maybeAppendEnginePlanNote({ whiteMoveIndex, rank });
+  } catch (e) {
+    console.warn("[coach] plan-reconcile note failed:", e);
+  }
+}
+
+// Rank -> human-friendly ordinal phrase used in the reconcile note.
+function rankPhrase(rank) {
+  if (rank === 1) return "the single best move";
+  if (rank === 2) return "the second-best move";
+  if (rank === 3) return "one of the top three moves";
+  return `ranked ${ordinal(rank)}`;
+}
+
+// If the scorecard awarded a medal (rank 1/2/3) but the coach classified the
+// move as off-plan, append a contrastive sentence to the visible coach message.
+// This is the "engine-strong, but off-plan" teaching moment — it's the whole
+// reason we show both signals side by side.
+function maybeAppendEnginePlanNote({ whiteMoveIndex, rank }) {
+  // Only trigger for medals.
+  if (rank > MEDAL_RANK_BRONZE) return;
+
+  // The critique for this move lives in state.history at index (whiteMoveIndex*2 - 1) - 1
+  // (history is 0-indexed and contains both colors; white moves are at even indexes).
+  const historyIndex = (whiteMoveIndex - 1) * 2;
+  const entry = state.history[historyIndex];
+  if (!entry || !entry.critique) return;
+  const cls = entry.critique.classification;
+  if (!cls || !["inaccuracy", "mistake", "blunder"].includes(cls)) return;
+
+  // Only annotate the CURRENTLY displayed coach message (i.e. the most
+  // recently played White move). If the player has already moved on, skip —
+  // the note would be stale.
+  const latestWhiteIdx = Math.ceil(state.ply / 2);
+  if (whiteMoveIndex !== latestWhiteIdx) return;
+
+  // Don't double-append if the note is already there.
+  const msgEl = document.getElementById("coachMessage");
+  if (!msgEl || msgEl.dataset.planReconciled === "1") return;
+
+  const openingName = (state.opening && state.opening.name) ? state.opening.name : "this opening";
+  const phrase = rankPhrase(rank);
+  // Mirror the exact plan-fit label the user is seeing on the right so the
+  // sentence reconciles THEIR chip, not a generic one.
+  const planLabelByClass = {
+    inaccuracy: "Off plan",
+    mistake: "Drifts from plan",
+    blunder: "Abandons plan",
+  };
+  const planLabel = planLabelByClass[cls] || "Off plan";
+  const note =
+    ` Worth noting: the engine rates this as **${phrase}** in the position — ` +
+    `it's strong chess. But the scorecard and the coach are measuring different things. ` +
+    `The medal means "engine-approved," while **${planLabel}** just means the move steps outside the ${openingName} plan you're learning. ` +
+    `Both can be true at once.`;
+
+  // Append as a block span (coachMessage itself is a <p>, so nesting a <p>
+  // would trigger HTML auto-close; span avoids that). CSS styles it as block.
+  const span = document.createElement("span");
+  span.className = "coach-reconcile-note";
+  span.innerHTML = escapeAndBold(note.trim());
+  msgEl.appendChild(span);
+  msgEl.dataset.planReconciled = "1";
 }
 
 // When the session finishes, compute and show the 16th cell’s average percentile.
@@ -945,6 +1014,10 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
   }
 
   msgEl.innerHTML = escapeAndBold(msg);
+  // Reset the plan-reconcile flag: a new coach message is on screen, so any
+  // note left over from a prior move has just been wiped. Allow the async
+  // ranker to append a fresh note for this move when it resolves.
+  delete msgEl.dataset.planReconciled;
 
   // Hide the pre-move prompt while the post-move verdict is visible
   const promptEl = document.getElementById("coachPrompt");
@@ -1124,13 +1197,17 @@ function escapeHtml(s) {
 }
 
 // ---------- On-board flash badge ----------
+// The brief chip that floats over the board after each move. These labels
+// describe curriculum PLAN-FIT, not pure engine strength — a move can flash
+// "Off plan" here and still earn a medal on the scorecard below because the
+// scorecard asks a different question (engine rank among all legal moves).
 const CLASS_FLASH_LABEL = {
   book: "Strong",
   good: "Good",
   playable: "Playable",
-  inaccuracy: "Inaccuracy",
-  mistake: "Mistake",
-  blunder: "Blunder",
+  inaccuracy: "Off plan",
+  mistake: "Drifts from plan",
+  blunder: "Abandons plan",
 };
 
 function flashMoveBadge(verdict) {

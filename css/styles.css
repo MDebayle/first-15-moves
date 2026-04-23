@@ -561,6 +561,25 @@ em { font-style: italic; color: var(--ink-900); }
 }
 .coach-message strong { color: var(--sage-900); font-weight: 600; }
 
+/* Engine-vs-plan reconciler note: appended when a medaled move is also
+   classified as off-plan. Muted sage-tinted treatment to read as a calmer
+   aside beneath the primary coach message. */
+.coach-reconcile-note {
+  display: block;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--ink-300);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink-700);
+  font-style: italic;
+}
+.coach-reconcile-note strong {
+  color: var(--sage-900);
+  font-weight: 600;
+  font-style: normal;
+}
+
 /* Pre-move coach prompt — phase goal + what to watch, before player moves */
 .coach-prompt {
   border-left: 2px solid var(--sage-500, #2f6b5a);

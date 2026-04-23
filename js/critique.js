@@ -22,13 +22,18 @@ export const CLASS = {
   BLUNDER: "blunder",
 };
 
+// User-facing labels. These describe how a move fits the opening PLAN, not a
+// pure engine verdict — a move can be engine-strong (even a bronze/silver/gold
+// in the scorecard) and still be "Off plan" if it drifts from the curriculum.
+// Keeping the internal classification keys (inaccuracy/mistake/blunder)
+// unchanged so none of the scoring logic has to move.
 const CLASS_LABEL = {
   book: "Theory",
   good: "Good",
   playable: "Playable",
-  inaccuracy: "Inaccuracy",
-  mistake: "Mistake",
-  blunder: "Blunder",
+  inaccuracy: "Off plan",
+  mistake: "Drifts from plan",
+  blunder: "Abandons plan",
 };
 
 // One sharp opening sentence per classification. No "gentle" filler.
@@ -48,20 +53,24 @@ const LEAD = {
     "Not the main line, but it holds up.",
     "Reasonable — just not the cleanest version.",
   ],
+  // Leads below use plan-fit phrasing to match the chip labels
+  // ("Off plan" / "Drifts from plan" / "Abandons plan"). Avoid engine-
+  // strength words like "inaccuracy" / "mistake" / "blunder" in user-facing
+  // leads — those words belong to the scorecard axis, not the plan axis.
   inaccuracy: [
-    "Slightly inaccurate.",
-    "A small inaccuracy.",
-    "Not wrong, but there's a sharper move.",
+    "Off the plan, but not a disaster.",
+    "Steps slightly outside the plan.",
+    "Playable, but not what the plan asks for.",
   ],
   mistake: [
-    "This one costs you.",
-    "That's a real mistake.",
-    "Noticeable drop in the position.",
+    "This drifts from the plan.",
+    "We've wandered off what we're studying.",
+    "The plan would have kept us sharper.",
   ],
   blunder: [
-    "That's a blunder.",
-    "Ouch — this one gives up material or structure.",
-    "Big drop. Worth studying carefully.",
+    "That abandons the plan.",
+    "We're off the rails of what we're learning.",
+    "Worth rewinding — this drops the plan entirely.",
   ],
 };
 
