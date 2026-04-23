@@ -1243,6 +1243,36 @@ document.getElementById("btnNewOpening").addEventListener("click", () => showPan
 document.getElementById("btnSwitch").addEventListener("click", () => showPanel("openings"));
 document.getElementById("btnPickOpening").addEventListener("click", () => showPanel("openings"));
 
+// --- Help modal (replaces the dead "Openings" top-right link) ---
+const helpModalEl = document.getElementById("helpModal");
+const btnHelpEl = document.getElementById("btnHelp");
+const btnHelpCloseEl = document.getElementById("btnHelpClose");
+const btnHelpDoneEl = document.getElementById("btnHelpDone");
+if (helpModalEl && btnHelpEl) {
+  btnHelpEl.addEventListener("click", () => {
+    if (typeof helpModalEl.showModal === "function") {
+      helpModalEl.showModal();
+      helpModalEl.scrollTop = 0;
+    } else {
+      // <dialog> not supported — fall back to an open attribute + top-of-viewport
+      helpModalEl.setAttribute("open", "");
+    }
+  });
+  const closeHelp = () => {
+    if (typeof helpModalEl.close === "function" && helpModalEl.hasAttribute("open")) {
+      helpModalEl.close();
+    } else {
+      helpModalEl.removeAttribute("open");
+    }
+  };
+  if (btnHelpCloseEl) btnHelpCloseEl.addEventListener("click", closeHelp);
+  if (btnHelpDoneEl) btnHelpDoneEl.addEventListener("click", closeHelp);
+  // Click on backdrop closes the modal (clicks that land on the <dialog> itself, not its inner <article>)
+  helpModalEl.addEventListener("click", (e) => {
+    if (e.target === helpModalEl) closeHelp();
+  });
+}
+
 // --- Round 3: Hint ladder buttons ---
 const btnHintNextEl = document.getElementById("btnHintNext");
 if (btnHintNextEl) btnHintNextEl.addEventListener("click", advanceHintLadder);

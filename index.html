@@ -41,9 +41,72 @@
       </a>
       <h1 class="header-tagline">Master the first 15 moves of chess.</h1>
       <nav class="site-nav">
-        <a href="#openings">Openings</a>
+        <button class="nav-btn" id="btnHelp" type="button" aria-haspopup="dialog" aria-controls="helpModal">Help</button>
       </nav>
     </header>
+
+    <!-- Help modal: the "what is this?" deeper background. Not required reading; here if the player wants it. -->
+    <dialog class="help-modal" id="helpModal" aria-labelledby="helpTitle">
+      <article class="help-inner">
+        <header class="help-header">
+          <div>
+            <p class="eyebrow">Background</p>
+            <h2 id="helpTitle">A quick guide to openings</h2>
+          </div>
+          <button class="help-close" id="btnHelpClose" type="button" aria-label="Close">×</button>
+        </header>
+
+        <section class="help-section">
+          <h3>What is a chess opening?</h3>
+          <p>An <strong>opening</strong> is the first stretch of a chess game — roughly the first 10 to 15 moves — where both players race to set up their army before the real fighting begins. A good opening does three things: it claims the center, it develops your pieces into useful positions, and it keeps your king safe.</p>
+          <p>Openings have names (Italian Game, Queen's Gambit, London System) because strong players have been studying these exact sequences for <em>centuries</em>. Each one is a well-tested plan for the early phase of the game.</p>
+        </section>
+
+        <section class="help-section">
+          <h3>What “theory” means</h3>
+          <p>When you hear a move is <strong>“in theory”</strong> or <strong>“on book,”</strong> it just means the move matches one of these well-studied sequences. Theory isn't a test you passed. It's a label for moves that have been analyzed and approved by decades of strong play.</p>
+          <p>You don't need to memorize theory to play well. If you follow basic principles — <strong>control the center, develop pieces, castle early, don't move the same piece twice</strong> — you'll <em>stumble into theory on your own</em>. That's the whole point. Theory encodes good principles. Good principles reproduce theory.</p>
+        </section>
+
+        <section class="help-section">
+          <h3>Why learn openings at all?</h3>
+          <ul class="help-list">
+            <li><strong>You stop losing in the first 10 moves.</strong> Most casual games are decided before the middlegame even starts. A sound opening puts you in the game.</li>
+            <li><strong>You get to the middlegame with a plan.</strong> Good openings hand you a healthy position and a clear idea of what to do next.</li>
+            <li><strong>You learn the principles by playing them.</strong> Every mainline move in a classical opening teaches a principle. Play them enough and the principles become instinct.</li>
+          </ul>
+        </section>
+
+        <section class="help-section">
+          <h3>Why these three openings?</h3>
+          <p>We picked three openings that cover the three most useful White setups a beginner or intermediate player will ever see. If you understand these, you have a real answer to almost any game.</p>
+          <ul class="help-list help-openings">
+            <li>
+              <p class="help-opening-name">Italian Game <span class="help-opening-eco">C50</span></p>
+              <p>The classic <strong>1.e4 e5</strong> opening. Directly claims the center, develops pieces toward the king, and teaches every core principle in its purest form. Still played at the top level 500 years after it was first written down.</p>
+            </li>
+            <li>
+              <p class="help-opening-name">Queen's Gambit Declined <span class="help-opening-eco">D30</span></p>
+              <p>The classic <strong>1.d4</strong> opening. A solid, strategic setup where both sides fight for the center with pawns. Famously popular at world championship level — the “queen's pawn” answer to e4 aggression.</p>
+            </li>
+            <li>
+              <p class="help-opening-name">London System <span class="help-opening-eco">D02</span></p>
+              <p>A setup-based opening: you play the same healthy piece arrangement against almost anything Black does. Low on memorization, high on understanding — a great first “real” opening to own.</p>
+            </li>
+          </ul>
+        </section>
+
+        <section class="help-section">
+          <h3>Where does opening theory come from?</h3>
+          <p>Every move in a known opening has been tested in thousands — sometimes millions — of games by strong human players and, more recently, by chess engines analyzing billions of positions per second. The mainline is the move that has, over time, proven to give the best results. When you play a mainline move, you're standing on hundreds of years of accumulated analysis.</p>
+          <p>That's why the coach says “theory” rather than “correct.” Theory isn't the <em>only</em> good move — it's the most battle-tested one.</p>
+        </section>
+
+        <footer class="help-footer">
+          <button class="btn-primary btn-sm" id="btnHelpDone" type="button">Got it — let's play</button>
+        </footer>
+      </article>
+    </dialog>
 
     <main class="page">
       <!-- HERO: board-first layout — board is the primary element, coach on the right -->
