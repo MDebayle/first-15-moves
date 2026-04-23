@@ -52,6 +52,12 @@ import {
   buildTakeawayRule,
 } from "./coaching.js";
 import { FIRST_MOVE_ADVICE, FIRST_MOVE_FALLBACK } from "../data/firstMoveAdvice.js";
+import {
+  SECOND_MOVE_ADVICE,
+  SECOND_MOVE_REPLY_FALLBACK,
+  SECOND_MOVE_OPENING_FALLBACK,
+  SECOND_MOVE_FALLBACK,
+} from "../data/secondMoveAdvice.js";
 
 const MAX_PLIES = 30; // 15 full moves
 const DEFAULT_OPENING_ID = "italian"; // auto-start with the Italian Game
@@ -1154,6 +1160,31 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
     const curated =
       (openingId && FIRST_MOVE_ADVICE[openingId] && FIRST_MOVE_ADVICE[openingId][moveObj.san]) ||
       FIRST_MOVE_FALLBACK;
+    if (curated) effectTxt = curated;
+  }
+
+  // Second-move override: on ply 3 (White's move 2) we look up a curated line
+  // keyed by the opening, Black's reply, and the White move just played. We
+  // use a graceful four-level fallback so every plausible path has something
+  // opening-aware to say:
+  //   1. exact triple (opening / blackReply / whiteSecond)
+  //   2. per-reply fallback (known blackReply, unknown whiteSecond)
+  //   3. per-opening fallback (unknown blackReply)
+  //   4. global fallback (shouldn't happen but safe)
+  // See data/secondMoveAdvice.js for the full table.
+  if (ply === 3 && moveObj && moveObj.san) {
+    const openingId = state.opening && state.opening.id;
+    // state.history at this point contains [W1, B1, W2-just-played]
+    const blackReply = state.history && state.history[1] && state.history[1].san;
+    const byOpening = (openingId && SECOND_MOVE_ADVICE[openingId]) || null;
+    const byReply = (byOpening && blackReply && byOpening[blackReply]) || null;
+    const exact = (byReply && byReply[moveObj.san]) || null;
+    const replyFallback =
+      (openingId && SECOND_MOVE_REPLY_FALLBACK[openingId] && blackReply &&
+        SECOND_MOVE_REPLY_FALLBACK[openingId][blackReply]) ||
+      null;
+    const openingFallback = (openingId && SECOND_MOVE_OPENING_FALLBACK[openingId]) || null;
+    const curated = exact || replyFallback || openingFallback || SECOND_MOVE_FALLBACK;
     if (curated) effectTxt = curated;
   }
 
