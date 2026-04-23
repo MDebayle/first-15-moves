@@ -64,6 +64,7 @@ import { getQueensideKnightAdvice } from "../data/queensideKnightAdvice.js";
 import { getKingsideKnightAdvice } from "../data/kingsideKnightAdvice.js";
 import { getPawnAdvice } from "../data/pawnAdvice.js";
 import { getQueenAdvice } from "../data/queenAdvice.js";
+import { buildRoleAwareLine, buildNextActorSuggestion } from "../data/pieceRoles.js";
 import { buildOpponentOpeningNote } from "./identifyBlackOpening.js";
 
 const MAX_PLIES = 30; // 15 full moves
@@ -1167,6 +1168,9 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
   // --- Effect: ONE sentence on what the move does ---
   const rubric = computeRubric(verdict, moveObj, ply);
   let effectTxt = computePlanFit(verdict, moveObj, ply, rubric) || verdict.message || "";
+  // Track whether any hand-crafted advice module owned the effect line so
+  // the role-aware fallback (see below) only fires when nothing curated did.
+  let hasCuratedAdvice = false;
 
   // First-move override: on ply 1 we prefer a hand-crafted, opening-aware
   // sentence tied to the specific SAN the player chose. This is the single
@@ -1177,7 +1181,7 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
     const curated =
       (openingId && FIRST_MOVE_ADVICE[openingId] && FIRST_MOVE_ADVICE[openingId][moveObj.san]) ||
       FIRST_MOVE_FALLBACK;
-    if (curated) effectTxt = curated;
+    if (curated) { effectTxt = curated; hasCuratedAdvice = true; }
   }
 
   // Second-move override: on ply 3 (White's move 2) we look up a curated line
@@ -1202,7 +1206,7 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       null;
     const openingFallback = (openingId && SECOND_MOVE_OPENING_FALLBACK[openingId]) || null;
     const curated = exact || replyFallback || openingFallback || SECOND_MOVE_FALLBACK;
-    if (curated) effectTxt = curated;
+    if (curated) { effectTxt = curated; hasCuratedAdvice = true; }
   }
 
   // Queenside-bishop override: whenever White moves the c1 bishop in the
@@ -1224,7 +1228,7 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       historySan: prevSan,
       ply,
     });
-    if (qbLine) effectTxt = qbLine;
+    if (qbLine) { effectTxt = qbLine; hasCuratedAdvice = true; }
   }
 
   // Kingside-bishop override: whenever White moves the f1 bishop in the first
@@ -1245,7 +1249,7 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       historySan: prevSan,
       ply,
     });
-    if (kbLine) effectTxt = kbLine;
+    if (kbLine) { effectTxt = kbLine; hasCuratedAdvice = true; }
   }
 
   // Queenside-knight override: the b1 knight is the most structure-sensitive
@@ -1265,7 +1269,7 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       historySan: prevSan,
       ply,
     });
-    if (qnLine) effectTxt = qnLine;
+    if (qnLine) { effectTxt = qnLine; hasCuratedAdvice = true; }
   }
 
   // Kingside-knight override: Nf3 is nearly automatic in classical openings
@@ -1285,7 +1289,7 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       historySan: prevSan,
       ply,
     });
-    if (knLine) effectTxt = knLine;
+    if (knLine) { effectTxt = knLine; hasCuratedAdvice = true; }
   }
 
   // Pawn override: pawns are the soul of any opening and their moves are
@@ -1306,7 +1310,7 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       historySan: prevSan,
       ply,
     });
-    if (pLine) effectTxt = pLine;
+    if (pLine) { effectTxt = pLine; hasCuratedAdvice = true; }
   }
 
   // Queen override: the queen is the strongest piece on the board and the
@@ -1328,7 +1332,27 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       historySan: prevSan,
       ply,
     });
-    if (qLine) effectTxt = qLine;
+    if (qLine) { effectTxt = qLine; hasCuratedAdvice = true; }
+  }
+
+  // Universal role-aware fallback: whenever none of the hand-crafted advice
+  // modules above took ownership of the effect line, fall back to a role
+  // lookup from the comprehensive piece-role chart (all 5 openings × every
+  // White unit). This is the cornerstone document that backs the coach when
+  // no other module has something to say — it means the coach can ALWAYS
+  // name the piece's role (lead/support/reserve/avoid) in the student's
+  // specific opening, rather than falling back to generic plan-fit text.
+  // The chart is keyed by opening + piece type + home square, so the
+  // b1 knight, c1 bishop, a-pawn, h-pawn, king, queen, rooks, etc. ALL
+  // have opening-specific role statements available.
+  if (!hasCuratedAdvice && moveObj && ply > 1) {
+    const openingId = state.opening && state.opening.id;
+    const roleLine = buildRoleAwareLine({
+      moveObj,
+      openingId,
+      verdictClass: verdict && verdict.classification,
+    });
+    if (roleLine) effectTxt = roleLine;
   }
 
   // One-time teaching line on the first "book" move: emphasize that book is
@@ -1614,15 +1638,51 @@ function renderCoachPrompt(ply) {
     primary = "You're into the planning phase. Every move should serve a concrete idea \u2014 ask yourself what the plan is before you move.";
   }
 
+  // Opening-aware next-actor upgrade: the priority stack above produces a
+  // useful but generic primary line ("develop a minor piece", "keep the
+  // center solid"). When we can name a SPECIFIC lead or support piece that
+  // the student still hasn't deployed in their chosen opening, that is a
+  // strictly better primary line — it teaches the opening's actual cast
+  // from the piece-role chart instead of generic development advice.
+  //
+  // The generic-primary predicates below intentionally match only the
+  // open-ended phase lines in the priority stack; check/castling/tactical
+  // primaries still win, because those truly are the most urgent thing.
+  let openingPrimary = null;
+  try {
+    const openingId = state.opening && state.opening.id;
+    const hist = (state.history || []).map((h) => h.san).filter(Boolean);
+    openingPrimary = buildNextActorSuggestion({ openingId, history: hist, nextPly });
+  } catch (_) { /* best-effort */ }
+
+  const isGenericPrimary =
+    /^Keep the center solid/.test(primary) ||
+    /^Get your next minor piece/.test(primary) ||
+    /^You're into the planning phase/.test(primary) ||
+    /^Stake the center first\. A pawn/.test(primary);
+
+  if (openingPrimary && isGenericPrimary) {
+    // Upgrade the primary line to the opening-specific one.
+    primary = openingPrimary;
+    openingPrimary = null; // consumed
+  }
+
   primaryEl.innerHTML = escapeAndBold(primary);
 
-  // ------- Secondary line: central-control read (optional) -------
+  // ------- Secondary line -------
+  // Prefer the central-control read when present. When not, and when we
+  // still have an opening-specific actor suggestion we haven't used as the
+  // primary, promote it to the secondary slot so the coach always brings
+  // the opening's cast to the student's attention when possible.
   let secondary = null;
   try {
     if (cc) {
       secondary = coachCentralNote(cc, nextPly);
     }
   } catch (_) { /* swallow */ }
+  if (!secondary && openingPrimary) {
+    secondary = openingPrimary;
+  }
 
   if (secondary) {
     secondaryEl.innerHTML = escapeAndBold(secondary);
