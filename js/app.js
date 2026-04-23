@@ -1837,11 +1837,14 @@ function renderCentralControlHud() {
         const t = tiers[`${f}${r}`] ?? 0;
         const pip = document.createElement("span");
         if (t > 0) {
-          const op = 0.10 + Math.min(Math.abs(t), 5) * 0.06;
-          pip.style.background = `rgba(74, 116, 184, ${op.toFixed(2)})`;
+          // White: deep blue, ramps with tier so the tiny pip reads clearly.
+          const op = 0.30 + Math.min(Math.abs(t), 5) * 0.10;
+          pip.style.background = `rgba(42, 78, 143, ${op.toFixed(2)})`;
         } else if (t < 0) {
-          const op = 0.10 + Math.min(Math.abs(t), 5) * 0.06;
-          pip.style.background = `rgba(192, 80, 80, ${op.toFixed(2)})`;
+          // Black: saturated amber (matches board overlay, does not collide
+          // with the red "threats" overlay).
+          const op = 0.36 + Math.min(Math.abs(t), 5) * 0.10;
+          pip.style.background = `rgba(212, 160, 23, ${op.toFixed(2)})`;
         }
         pips.appendChild(pip);
       }
@@ -1891,8 +1894,41 @@ function applyThreatOverlay() {
     return;
   }
   const captures = probe.moves({ verbose: true }).filter((m) => m.flags.includes("c") || m.flags.includes("e"));
-  const targets = Array.from(new Set(captures.map((m) => m.to)));
+
+  // Count attackers per target square so we can turn up the red when multiple
+  // Black pieces are hitting the same square. One attacker = base red;
+  // two = deeper; three+ = deepest. The marker SVG picks this up via the
+  // .is-double / .is-triple class modifiers in CSS.
+  const attackerCount = {};
+  for (const m of captures) {
+    attackerCount[m.to] = (attackerCount[m.to] || 0) + 1;
+  }
+
+  const targets = Object.keys(attackerCount);
   targets.forEach((sq) => state.board.addMarker(MARKER_THREAT, sq));
+
+  // cm-chessboard renders the marker after addMarker but we need to tag each
+  // <use> element with an intensity class. Do it on the next frame so the
+  // SVG nodes actually exist in the DOM.
+  requestAnimationFrame(() => {
+    const boardEl =
+      (state.board && state.board.view && state.board.view.svg) ||
+      document.querySelector(".cm-chessboard");
+    if (!boardEl) return;
+    const uses = boardEl.querySelectorAll("use.marker-square-threat");
+    uses.forEach((node) => {
+      node.classList.remove("is-double", "is-triple");
+      // cm-chessboard exposes the square on the marker's parent <g data-square>
+      // or via data-square on the <use> itself. Try both.
+      const sq =
+        node.getAttribute("data-square") ||
+        (node.parentNode && node.parentNode.getAttribute && node.parentNode.getAttribute("data-square"));
+      if (!sq) return;
+      const n = attackerCount[sq] || 0;
+      if (n >= 3) node.classList.add("is-triple");
+      else if (n === 2) node.classList.add("is-double");
+    });
+  });
 }
 
 function toggleOverlay(which) {

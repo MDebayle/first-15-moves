@@ -1047,41 +1047,49 @@ body.coach-off .overlay-toolbar {
   color: #fff;
 }
 
-/* Threat overlay uses a clay tint.
-   cm-chessboard renders markers as <use href="#markerSquare">, so target
-   the <use> element directly — fill/opacity cascade into the referenced rect. */
+/* Threat overlay — a deep, saturated red. Multi-attacker squares (see
+   .is-double / .is-triple) crank opacity higher so the student can see at
+   a glance which square is most dangerous. */
 .cm-chessboard .markers use.marker-square-threat {
-  fill: var(--clay-500);
-  opacity: 0.28;
+  fill: #b02626;
+  opacity: 0.48;
+}
+.cm-chessboard .markers use.marker-square-threat.is-double {
+  opacity: 0.62;
+}
+.cm-chessboard .markers use.marker-square-threat.is-triple {
+  opacity: 0.76;
 }
 
-/* Center-control territory overlay — blue = White influence, red = Black.
-   Tier 0 (contested / neutral) renders no marker. Opacity ramps from
-   w1/b1 (thinly dominant) to w5/b5 (heavily dominant). */
+/* Center-control territory overlay — blue for White influence, amber/yellow
+   for Black. We keep amber (not red) for Black so it doesn't collide with
+   the red threat overlay when both are on at once. Tier 0 (contested) shows
+   no marker. Tiers 1..5 ramp quickly from clearly-visible to strongly
+   saturated so even a single-piece majority reads on the board. */
 .cm-chessboard .markers use.marker-territory-w1,
 .cm-chessboard .markers use.marker-territory-w2,
 .cm-chessboard .markers use.marker-territory-w3,
 .cm-chessboard .markers use.marker-territory-w4,
 .cm-chessboard .markers use.marker-territory-w5 {
-  fill: #4a74b8;
+  fill: #2a4e8f;
 }
-.cm-chessboard .markers use.marker-territory-w1 { opacity: 0.10; }
-.cm-chessboard .markers use.marker-territory-w2 { opacity: 0.18; }
-.cm-chessboard .markers use.marker-territory-w3 { opacity: 0.26; }
-.cm-chessboard .markers use.marker-territory-w4 { opacity: 0.34; }
-.cm-chessboard .markers use.marker-territory-w5 { opacity: 0.42; }
+.cm-chessboard .markers use.marker-territory-w1 { opacity: 0.32; }
+.cm-chessboard .markers use.marker-territory-w2 { opacity: 0.44; }
+.cm-chessboard .markers use.marker-territory-w3 { opacity: 0.56; }
+.cm-chessboard .markers use.marker-territory-w4 { opacity: 0.66; }
+.cm-chessboard .markers use.marker-territory-w5 { opacity: 0.74; }
 .cm-chessboard .markers use.marker-territory-b1,
 .cm-chessboard .markers use.marker-territory-b2,
 .cm-chessboard .markers use.marker-territory-b3,
 .cm-chessboard .markers use.marker-territory-b4,
 .cm-chessboard .markers use.marker-territory-b5 {
-  fill: #c05050;
+  fill: #d4a017;
 }
-.cm-chessboard .markers use.marker-territory-b1 { opacity: 0.10; }
-.cm-chessboard .markers use.marker-territory-b2 { opacity: 0.18; }
-.cm-chessboard .markers use.marker-territory-b3 { opacity: 0.26; }
-.cm-chessboard .markers use.marker-territory-b4 { opacity: 0.34; }
-.cm-chessboard .markers use.marker-territory-b5 { opacity: 0.42; }
+.cm-chessboard .markers use.marker-territory-b1 { opacity: 0.38; }
+.cm-chessboard .markers use.marker-territory-b2 { opacity: 0.52; }
+.cm-chessboard .markers use.marker-territory-b3 { opacity: 0.64; }
+.cm-chessboard .markers use.marker-territory-b4 { opacity: 0.74; }
+.cm-chessboard .markers use.marker-territory-b5 { opacity: 0.82; }
 
 /* Center-control HUD — sits in the gap between board and scorecard. */
 .center-hud {
@@ -1115,8 +1123,8 @@ body.coach-off .overlay-toolbar {
   min-width: 3.2rem;
   text-align: center;
 }
-.center-hud-score.is-white { color: #2f5ea8; border-color: #b9cbe6; background: #eef3fb; }
-.center-hud-score.is-black { color: #a33b3b; border-color: #e3bdbd; background: #faeded; }
+.center-hud-score.is-white { color: #1f4685; border-color: #b9cbe6; background: #eaf0fa; }
+.center-hud-score.is-black { color: #8a6610; border-color: #e4d29a; background: #faf2d5; }
 .center-hud-score.is-neutral { color: var(--ink-700); }
 .center-hud-desc {
   flex: 1 1 auto;
