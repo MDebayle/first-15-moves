@@ -3,6 +3,7 @@ services:
     name: first-15-moves-api
     runtime: docker
     plan: starter              # $7/month, stays awake (no cold starts)
+    rootDir: server
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
