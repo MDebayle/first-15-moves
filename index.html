@@ -68,7 +68,7 @@
             <div id="board" class="board"></div>
             <!-- Floating move-score badge that flashes after each move -->
             <div class="move-flash" id="moveFlash" hidden>
-              <span class="move-flash-label" id="moveFlashLabel">Book</span>
+              <span class="move-flash-label" id="moveFlashLabel">Strong</span>
             </div>
           </div>
 
@@ -135,6 +135,12 @@
           </div>
 
           <div class="coach-feedback" id="coachFeedback">
+            <!-- Pre-move prompt: phase goal + current concern + what to watch -->
+            <div class="coach-prompt" id="coachPrompt">
+              <p class="prompt-goal" id="promptGoal">—</p>
+              <p class="prompt-watch" id="promptWatch" hidden>—</p>
+            </div>
+
             <p class="coach-message" id="coachMessage">
               Make a move when you're ready. I'll tell you what it does, what it costs, and what to watch for next.
             </p>
@@ -143,7 +149,7 @@
             <div class="coach-axes" id="coachAxes" hidden>
               <div class="axis">
                 <span class="axis-label">
-                  <span class="term" data-term="theory">Theory<span class="tt">Established opening lines that strong players have analyzed for decades.</span></span>
+                  <span class="term" data-term="theory">Theory<span class="tt">Moves that match standard opening lines. Natural, principled moves often match theory even if you've never memorized a thing.</span></span>
                 </span>
                 <span class="axis-value" id="axisTheory">—</span>
               </div>
@@ -256,7 +262,7 @@
 
         <div class="summary-stats">
           <div class="stat">
-            <span class="stat-label">Book accuracy</span>
+            <span class="stat-label">Theory match</span>
             <span class="stat-value" id="statBook">—</span>
           </div>
           <div class="stat">

@@ -23,7 +23,7 @@ export const CLASS = {
 };
 
 const CLASS_LABEL = {
-  book: "Book",
+  book: "Theory",
   good: "Good",
   playable: "Playable",
   inaccuracy: "Inaccuracy",
@@ -36,7 +36,7 @@ const LEAD = {
   book: [
     "That's the main line.",
     "Textbook — exactly the idea here.",
-    "Right on book.",
+    "Right in theory.",
   ],
   good: [
     "Good move.",

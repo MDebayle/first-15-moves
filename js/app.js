@@ -42,12 +42,28 @@ import {
 const MAX_PLIES = 30; // 15 full moves
 const DEFAULT_OPENING_ID = "italian"; // auto-start with the Italian Game
 
-// Phase map: ply range -> label
+// Phase map: ply range -> label + pre-move coaching prompt
 const PHASES = [
-  { minPly: 1, maxPly: 8,  label: "Claim the center" },
-  { minPly: 9, maxPly: 16, label: "Develop & coordinate" },
-  { minPly: 17, maxPly: 24, label: "King safety & structure" },
-  { minPly: 25, maxPly: 30, label: "Plan & pressure" },
+  {
+    minPly: 1, maxPly: 8, label: "Claim the center",
+    goal: "Fight for the center. Put a pawn on e4 or d4, then develop a knight toward it.",
+    watch: "Don't move the same piece twice, and keep the queen home until she has targets.",
+  },
+  {
+    minPly: 9, maxPly: 16, label: "Develop & coordinate",
+    goal: "Get every minor piece into play and tuck your king away.",
+    watch: "Your king is still in the middle. Castle before opening lines.",
+  },
+  {
+    minPly: 17, maxPly: 24, label: "King safety & structure",
+    goal: "Finish development, then find a plan \u2014 a file, a diagonal, a weakness.",
+    watch: "Check that your king is safe before committing pieces to the other side of the board.",
+  },
+  {
+    minPly: 25, maxPly: 30, label: "Plan & pressure",
+    goal: "Pick a target and aim multiple pieces at it.",
+    watch: "Trade when it helps your plan, not just because a trade is available.",
+  },
 ];
 
 // Friendly labels for principle tags. Polarity sign is added at render time.
@@ -236,6 +252,8 @@ function resetCoachPanel() {
     "Make a move when you're ready. I'll tell you what it does, what it costs, and what to watch for next.";
   const meta = document.getElementById("coachMeta");
   if (meta) meta.hidden = true;
+  // Show the pre-move prompt for the opening phase
+  renderCoachPrompt(0);
   document.getElementById("coachConcepts").innerHTML = "";
   const alts = document.getElementById("coachAlternatives");
   if (alts) alts.hidden = true;
@@ -395,6 +413,9 @@ async function commitStudentMove(moveSpec) {
   }
 
   await computerReply();
+
+  // After Black replies, refresh the pre-move prompt with the new phase/situation
+  renderCoachPrompt(state.ply);
 
   state.inputLocked = false;
   setCoachStatus("Your move.");
@@ -583,7 +604,24 @@ function updatePhaseChip(ply) {
 
 function renderCoach(verdict, alternatives, moveObj, ply) {
   const msgEl = document.getElementById("coachMessage");
-  msgEl.innerHTML = escapeAndBold(verdict.message);
+  let msg = verdict.message;
+
+  // One-time teaching line on the first "book" move: emphasize that book is
+  // a theory fact, not a virtue — natural moves often stumble into it.
+  if (verdict.classification === "book") {
+    try {
+      if (!localStorage.getItem("f15m_book_taught")) {
+        msg += " **Theory isn't a test you passed** \u2014 it's a label for moves that match established opening lines. Natural, principled moves often match theory without any memorization.";
+        localStorage.setItem("f15m_book_taught", "1");
+      }
+    } catch (_) { /* localStorage unavailable */ }
+  }
+
+  msgEl.innerHTML = escapeAndBold(msg);
+
+  // Hide the pre-move prompt while the post-move verdict is visible
+  const promptEl = document.getElementById("coachPrompt");
+  if (promptEl) promptEl.hidden = true;
 
   // Close any open hint ladder when a move is played
   const ladder = document.getElementById("hintLadder");
@@ -719,7 +757,7 @@ function escapeHtml(s) {
 
 // ---------- On-board flash badge ----------
 const CLASS_FLASH_LABEL = {
-  book: "Book",
+  book: "Strong",
   good: "Good",
   playable: "Playable",
   inaccuracy: "Inaccuracy",
@@ -748,7 +786,53 @@ function flashMoveBadge(verdict) {
   if (el._flashTimer) clearTimeout(el._flashTimer);
   el._flashTimer = setTimeout(() => {
     el.hidden = true;
-  }, 1150);
+  }, 2000);
+}
+
+// Render the pre-move prompt above coach-message: phase goal + situational concern.
+// Called at session start, after every computer reply, and on reset.
+function renderCoachPrompt(ply) {
+  const promptEl = document.getElementById("coachPrompt");
+  const goalEl = document.getElementById("promptGoal");
+  const watchEl = document.getElementById("promptWatch");
+  if (!promptEl || !goalEl || !watchEl) return;
+
+  // Next-move ply is current ply + 1 (ply increments before this is called)
+  const nextPly = ply + 1;
+  const phase = PHASES.find((p) => nextPly >= p.minPly && nextPly <= p.maxPly) || PHASES[0];
+
+  // Derive a situational watch line based on board state
+  let watch = phase.watch;
+  try {
+    if (state.chess && state.history && state.history.length > 0) {
+      const hasCastled = state.history.some(
+        (h) => h.byStudent && (h.san === "O-O" || h.san === "O-O-O")
+      );
+      const last = state.history[state.history.length - 1];
+      if (!hasCastled && nextPly >= 9) {
+        watch = "Your king is still in the center. Castling soon is the highest-priority move.";
+      } else if (last && !last.byStudent && last.san) {
+        // After a Black reply, hint at reading the move
+        const san = last.san;
+        if (/x/.test(san)) {
+          watch = `Black just captured with <strong>${san}</strong>. Recapture only if the trade serves your plan.`;
+        } else if (/\+$/.test(san)) {
+          watch = `Black checked with <strong>${san}</strong>. Resolve the check, then return to the plan.`;
+        } else if (/^[NBRQ]/.test(san) && nextPly <= 8) {
+          watch = `Black developed with <strong>${san}</strong>. Answer development with development \u2014 don't chase.`;
+        }
+      }
+    }
+  } catch (_) { /* fall back to phase.watch */ }
+
+  goalEl.textContent = phase.goal;
+  if (watch) {
+    watchEl.innerHTML = escapeAndBold(watch);
+    watchEl.hidden = false;
+  } else {
+    watchEl.hidden = true;
+  }
+  promptEl.hidden = false;
 }
 
 function escapeAndBold(text) {
@@ -879,7 +963,7 @@ function endSession() {
   document.getElementById("statBook").textContent = `${bookMoves}/${studentMoves.length} (${accuracy}%)`;
   document.getElementById("statDeviation").textContent = state.firstDeviationPly
     ? `Move ${Math.ceil(state.firstDeviationPly / 2)}`
-    : "Stayed on book";
+    : "Stayed in theory";
 
   // Recurring theme = most-used principle (positive if clean session, else negative)
   const cleanSession = bookMoves === studentMoves.length;
@@ -950,8 +1034,8 @@ function buildGoodSummary(studentMoves) {
   if (goodMoves.length === studentMoves.length) {
     const tags = positiveList.slice(0, 2).map((p) => prettyConceptForStat(p[0])).join(" and ");
     return tags
-      ? `Every move matched the book. You consistently showed up for <strong>${tags}</strong>.`
-      : `Every move matched the book. Clean opening work.`;
+      ? `Every move matched standard theory. You consistently showed up for <strong>${tags}</strong>.`
+      : `Every move matched standard theory. Clean opening work.`;
   }
 
   if (goodMoves.length >= studentMoves.length * 0.7) {
@@ -996,7 +1080,7 @@ function buildLessonSummary(studentMoves) {
   if (bookMoves === studentMoves.length) {
     return `You have the theory. Next step: play this opening against sharper replies in a real game.`;
   }
-  return `Your moves stayed reasonable even off-book. Next time, aim for the main line — it sets up the middlegame cleanly.`;
+  return `Your moves stayed reasonable even when you left theory. Next time, aim for the main line — it sets up the middlegame cleanly.`;
 }
 
 const LESSON_ADVICE = {

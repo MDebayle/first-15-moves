@@ -2,7 +2,7 @@
  * Coaching module — the "deepen the feedback card" layer.
  *
  * Given a verdict + move + ply, produce:
- *   - axes     : { theory: "In book" | "Off book", quality: "Strong" | ... }
+ *   - axes     : { theory: "In theory" | "Off theory", quality: "Strong" | ... }
  *   - rubric   : { center: n, development: n, "king-safety": n, tempo: n }
  *               where n ∈ [-2, -1, 0, 1, 2]
  *   - planFit  : one-sentence string about how the move serves the phase goal
@@ -127,7 +127,7 @@ const QUALITY_LABEL = {
 
 export function computeAxes(verdict) {
   return {
-    theory: verdict.isMainline ? "In book" : (verdict.isInBook ? "Known sideline" : "Off book"),
+    theory: verdict.isMainline ? "In theory" : (verdict.isInBook ? "Known sideline" : "Off theory"),
     theoryCls: verdict.isMainline ? "ax-in-book" : (verdict.isInBook ? "ax-in-book" : "ax-off-book"),
     quality: QUALITY_LABEL[verdict.classification] || "Playable",
     qualityCls: "ax-" + (verdict.classification || "playable"),
