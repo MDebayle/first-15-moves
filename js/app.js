@@ -25,6 +25,7 @@ import { PromotionDialog } from "../vendor/cm-chessboard/src/extensions/promotio
 
 import { OPENINGS } from "../data/openings.js";
 import { Engine } from "./engine.js";
+import { Ranker, assignRanks, findMoveRank } from "./ranker.js";
 import { CONFIG } from "./config.js";
 import { critique, CLASS, classToBadgeClass } from "./critique.js";
 import {
@@ -41,6 +42,16 @@ import {
 
 const MAX_PLIES = 30; // 15 full moves
 const DEFAULT_OPENING_ID = "italian"; // auto-start with the Italian Game
+
+// Scorecard constants
+const SCORECARD_CELLS = 16; // 15 moves + 1 final percentile cell
+const MEDAL_RANK_GOLD = 1;
+const MEDAL_RANK_SILVER = 2;
+const MEDAL_RANK_BRONZE = 3;
+// Depth for the background "rank this move among all legal options" analysis.
+// Lower than the main critique depth (12) to keep it snappy — ranking wants
+// relative ordering, not precise cp numbers.
+const RANKER_DEPTH = 10;
 
 // Phase map: ply range -> label + pre-move coaching prompt
 const PHASES = [
@@ -106,6 +117,9 @@ const state = {
   overlayThreats: false,
   hintStepIndex: 0,
   hintLadderSteps: [],
+  // Scorecard state
+  ranker: null,            // Ranker instance (its own Stockfish worker)
+  moveRanks: [],           // [{ whiteMoveIndex: 1..15, rank, total, medal }]
 };
 
 // ---------- Panels ----------
@@ -170,6 +184,214 @@ function enterContinueMode() {
   if (hintLadder) hintLadder.hidden = true;
 }
 
+// ---------- Scorecard ----------
+
+// SVG medal icons. Simple, geometric, distinct colors.
+// Written inline so they can inherit `currentColor` for strokes.
+const MEDAL_SVG = {
+  gold: `<svg class="medal-icon" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <path d="M10 2 L16 18 L24 18 L30 2 Z" fill="#c99d4a" opacity=".85"/>
+    <circle cx="20" cy="26" r="11" fill="#e8c66a" stroke="#8a6420" stroke-width="1.4"/>
+    <circle cx="20" cy="26" r="7" fill="#f4dd92"/>
+    <text x="20" y="30" text-anchor="middle" font-size="9" font-weight="700" fill="#6d4c0f" font-family="Georgia, serif">1</text>
+  </svg>`,
+  silver: `<svg class="medal-icon" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <path d="M10 2 L16 18 L24 18 L30 2 Z" fill="#9aa4ad" opacity=".85"/>
+    <circle cx="20" cy="26" r="11" fill="#d4dadf" stroke="#5a6a73" stroke-width="1.4"/>
+    <circle cx="20" cy="26" r="7" fill="#e9eef2"/>
+    <text x="20" y="30" text-anchor="middle" font-size="9" font-weight="700" fill="#3c4a52" font-family="Georgia, serif">2</text>
+  </svg>`,
+  bronze: `<svg class="medal-icon" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <path d="M10 2 L16 18 L24 18 L30 2 Z" fill="#a36b3f" opacity=".85"/>
+    <circle cx="20" cy="26" r="11" fill="#c78350" stroke="#6a3e15" stroke-width="1.4"/>
+    <circle cx="20" cy="26" r="7" fill="#dca078"/>
+    <text x="20" y="30" text-anchor="middle" font-size="9" font-weight="700" fill="#4f2b0b" font-family="Georgia, serif">3</text>
+  </svg>`,
+};
+
+// Build the 16 empty cells once. Cells 1–15 are per-move; cell 16 is the final percentile.
+function renderScorecardShell() {
+  const grid = document.getElementById("scorecardGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  for (let i = 1; i <= SCORECARD_CELLS; i++) {
+    const li = document.createElement("li");
+    li.className = "scorecard-cell empty" + (i === SCORECARD_CELLS ? " final" : "");
+    li.dataset.cell = String(i);
+    const label = i === SCORECARD_CELLS ? "Final" : String(i);
+    li.setAttribute(
+      "aria-label",
+      i === SCORECARD_CELLS ? "Final session score (not yet computed)" : `Move ${i} (not yet played)`,
+    );
+    li.innerHTML = `
+      <span class="cell-index">${label}</span>
+      <span class="cell-rank"></span>
+      <span class="cell-of"></span>
+    `;
+    grid.appendChild(li);
+  }
+}
+
+// Convert rank -> medal key or null.
+function rankToMedal(rank) {
+  if (rank === MEDAL_RANK_GOLD) return "gold";
+  if (rank === MEDAL_RANK_SILVER) return "silver";
+  if (rank === MEDAL_RANK_BRONZE) return "bronze";
+  return null;
+}
+
+// Fill a per-move cell (index 1..15) with rank info.
+function paintScorecardCell(whiteMoveIndex, rank, total) {
+  const grid = document.getElementById("scorecardGrid");
+  if (!grid) return;
+  const cell = grid.querySelector(`[data-cell="${whiteMoveIndex}"]`);
+  if (!cell) return;
+  const medal = rankToMedal(rank);
+
+  cell.classList.remove("empty");
+  cell.classList.add("filled");
+  if (medal) cell.classList.add("medal", `medal-${medal}`);
+
+  const rankEl = cell.querySelector(".cell-rank");
+  const ofEl = cell.querySelector(".cell-of");
+
+  if (medal) {
+    // Replace content with medal svg; hide numeric labels via CSS.
+    cell.innerHTML = `<span class="cell-index">${whiteMoveIndex}</span>${MEDAL_SVG[medal]}`;
+    cell.setAttribute("aria-label", `Move ${whiteMoveIndex}: ${medal} medal (rank ${rank} of ${total})`);
+  } else {
+    if (rankEl) rankEl.textContent = ordinal(rank);
+    if (ofEl) ofEl.textContent = `/ ${total}`;
+    cell.setAttribute("aria-label", `Move ${whiteMoveIndex}: ranked ${rank} of ${total}`);
+  }
+}
+
+// Fill the final (16th) cell with the session-average percentile.
+function paintScorecardFinal(percentile) {
+  const grid = document.getElementById("scorecardGrid");
+  if (!grid) return;
+  const cell = grid.querySelector(`[data-cell="${SCORECARD_CELLS}"]`);
+  if (!cell) return;
+  cell.classList.remove("empty");
+  cell.classList.add("filled");
+  const rounded = Math.round(percentile);
+  cell.innerHTML = `
+    <span class="cell-index">Final</span>
+    <span class="cell-rank">Top ${rounded}%</span>
+    <span class="cell-of">Average</span>
+  `;
+  cell.setAttribute("aria-label", `Final session score: top ${rounded} percent on average`);
+}
+
+// Clear a specific cell back to its initial "empty" placeholder state.
+// Used when the player takes back their move so the scorecard stays honest.
+function clearScorecardCell(whiteMoveIndex) {
+  const grid = document.getElementById("scorecardGrid");
+  if (!grid) return;
+  const cell = grid.querySelector(`[data-cell="${whiteMoveIndex}"]`);
+  if (!cell) return;
+  cell.className = "scorecard-cell empty" + (whiteMoveIndex === SCORECARD_CELLS ? " final" : "");
+  const label = whiteMoveIndex === SCORECARD_CELLS ? "Final" : String(whiteMoveIndex);
+  cell.innerHTML = `
+    <span class="cell-index">${label}</span>
+    <span class="cell-rank"></span>
+    <span class="cell-of"></span>
+  `;
+  cell.setAttribute(
+    "aria-label",
+    whiteMoveIndex === SCORECARD_CELLS
+      ? "Final session score (not yet computed)"
+      : `Move ${whiteMoveIndex} (not yet played)`,
+  );
+}
+
+// English ordinals for small integers.
+function ordinal(n) {
+  if (n >= 11 && n <= 13) return `${n}th`;
+  const last = n % 10;
+  if (last === 1) return `${n}st`;
+  if (last === 2) return `${n}nd`;
+  if (last === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
+// Soft golf-clap audio. Lazy-loaded (HTMLAudioElement) and only played on gold medals.
+let _clapAudio = null;
+function playGoldClap() {
+  try {
+    if (!_clapAudio) {
+      _clapAudio = new Audio("./assets/golf-clap.mp3");
+      _clapAudio.preload = "auto";
+      _clapAudio.volume = 0.6;
+    }
+    // Allow retriggering if it's already mid-play.
+    _clapAudio.currentTime = 0;
+    const p = _clapAudio.play();
+    if (p && typeof p.catch === "function") {
+      // Autoplay can fail if the user hasn't interacted yet — swallow silently.
+      p.catch(() => {});
+    }
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+// Kick off a non-blocking rank analysis for a move that was just played.
+// Updates the scorecard cell in place when the analysis returns. Does NOT
+// block the main critique/engine-reply pipeline.
+async function analyzeMoveRank({ whiteMoveIndex, fenBefore, uciMove }) {
+  if (!state.ranker) return;
+  let ranked;
+  try {
+    // Count legal moves from the pre-move FEN to size MultiPV correctly.
+    // We can’t easily instantiate a second chess.js here; Stockfish will
+    // still only report moves that exist. Using 128 is safe (legal move
+    // max in any position is ~218; typical openings are <50) but we pass
+    // the real count if available.
+    const legalCount = state._lastLegalCount || 128;
+    ranked = await state.ranker.rankAll({ fen: fenBefore, legalCount, depth: RANKER_DEPTH });
+  } catch (e) {
+    console.warn("[scorecard] rank failed:", e);
+    return;
+  }
+  if (!ranked || ranked.length === 0) return;
+
+  // Stockfish returns the MultiPV list already sorted best-first
+  // (multipv=1 is best). We trust that ordering directly.
+  const ranksAssigned = assignRanks(ranked);
+  const rank = findMoveRank(ranksAssigned, uciMove);
+  const total = ranked.length;
+  if (!rank) {
+    // Safety net: if Stockfish didn't return a line for this exact move
+    // (rare, e.g. MultiPV was capped), we just leave the cell empty.
+    console.warn("[scorecard] could not locate move in ranked list:", uciMove);
+    return;
+  }
+
+  // If the player undid this move while analysis was running, drop the result.
+  const whiteMovesPlayed = Math.ceil(state.ply / 2);
+  if (whiteMoveIndex > whiteMovesPlayed) return;
+
+  // Persist
+  state.moveRanks.push({ whiteMoveIndex, rank, total, medal: rankToMedal(rank) });
+
+  // Paint the cell and, if gold, play the cheer.
+  paintScorecardCell(whiteMoveIndex, rank, total);
+  if (rank === MEDAL_RANK_GOLD) playGoldClap();
+}
+
+// When the session finishes, compute and show the 16th cell’s average percentile.
+// "Top X%" means you ranked within the best X% of available moves.
+// A rank of 4 out of 20 is "top 20%". Formula: (rank / total) * 100.
+// LOWER is better. Moves that never got a rank (e.g. engine failed) are skipped.
+function computeSessionPercentile() {
+  const rows = state.moveRanks.filter((r) => r.rank && r.total);
+  if (rows.length === 0) return null;
+  const percentiles = rows.map((r) => (r.rank / r.total) * 100);
+  const avg = percentiles.reduce((a, b) => a + b, 0) / percentiles.length;
+  return avg;
+}
+
 // ---------- Opening picker ----------
 function difficultyClass(label) {
   if (!label) return "";
@@ -224,6 +446,11 @@ async function startGame(openingId) {
   state.inputLocked = false;
   state.sessionEnded = false;
   state.coachOff = false; // set true when user chooses "Continue without coach"
+  state.moveRanks = [];
+  state._lastLegalCount = null;
+
+  // Reset the scorecard grid to 16 empty cells.
+  renderScorecardShell();
 
   document.getElementById("openingEco").textContent = opening.eco;
   document.getElementById("openingTitle").textContent = opening.name;
@@ -291,6 +518,18 @@ async function startGame(openingId) {
     }
   } else {
     setCoachStatus(state.engine.mode === "remote" ? "Ready." : "Ready (local engine).");
+  }
+
+  // Boot the ranker (own Stockfish worker, separate from the critique engine).
+  // Failure here is non-fatal — scorecard just won't light up.
+  if (!state.ranker) {
+    try {
+      state.ranker = new Ranker();
+      await state.ranker.start();
+    } catch (e) {
+      console.warn("Ranker failed to start — scorecard will stay empty:", e);
+      state.ranker = null;
+    }
   }
 }
 
@@ -377,6 +616,12 @@ function handleMoveInput(event) {
 }
 
 async function commitStudentMove(moveSpec) {
+  // Capture pre-move state for scorecard ranking: the FEN the student saw
+  // when deciding, and the count of legal moves they were choosing from.
+  const fenBeforeMove = state.chess.fen();
+  const legalBefore = state.chess.moves();
+  state._lastLegalCount = legalBefore.length;
+
   const moveObj = state.chess.move(moveSpec);
   if (!moveObj) return;
 
@@ -384,6 +629,18 @@ async function commitStudentMove(moveSpec) {
   const ply = state.ply;
   const fenAfter = state.chess.fen();
   state.board.setPosition(fenAfter, true);
+
+  // Fire off the rank analysis in parallel. It runs on its own worker
+  // so it never blocks the main critique pipeline or the engine reply.
+  // Scorecard cells are updated when this resolves. Only rank the
+  // first 15 White moves — in continue-mode we stop adding scorecard rows.
+  const whiteMoveIndex = Math.ceil(ply / 2);
+  if (!state.coachOff && whiteMoveIndex >= 1 && whiteMoveIndex <= 15) {
+    const uciMove = moveObj.from + moveObj.to + (moveObj.promotion || "");
+    // Intentionally un-awaited:
+    analyzeMoveRank({ whiteMoveIndex, fenBefore: fenBeforeMove, uciMove })
+      .catch((e) => console.warn("[scorecard] background rank error:", e));
+  }
 
   updatePhaseChip(ply);
 
@@ -1093,7 +1350,25 @@ function endSession() {
   else if (accuracy >= 40) headline.textContent = "Good work — room to sharpen.";
   else headline.textContent = "Tough one. Every session teaches.";
 
+  // Finalize the scorecard: paint the 16th cell with the session’s
+  // average percentile. If any per-move rank analyses are still running
+  // (slow depth-10 search on a crowded position), wait briefly for them
+  // so the final cell reflects all 15 moves. Cap the wait so the modal
+  // isn't held up if Stockfish is wedged.
+  finalizeScorecard().catch((e) => console.warn("[scorecard] finalize error:", e));
+
   openSummaryModal();
+}
+
+// Compute and paint the final percentile cell. Waits up to ~3s for any
+// in-flight rank analyses to settle so the average reflects every move.
+async function finalizeScorecard() {
+  const deadline = Date.now() + 3000;
+  while (state.moveRanks.length < 15 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const pct = computeSessionPercentile();
+  if (pct != null) paintScorecardFinal(pct);
 }
 
 function buildGoodSummary(studentMoves) {
@@ -1204,6 +1479,15 @@ function undoLast() {
     state.history.pop();
     state.evalHistory.pop();
     state.ply--;
+  }
+  // Roll back the scorecard: remove any entries whose whiteMoveIndex is now
+  // past the end of play, and reset those cells to empty. ply counts half-moves,
+  // so the number of completed White moves is ceil(ply/2).
+  const whiteMovesPlayed = Math.ceil(state.ply / 2);
+  if (Array.isArray(state.moveRanks) && state.moveRanks.length > 0) {
+    const toRemove = state.moveRanks.filter((r) => r.whiteMoveIndex > whiteMovesPlayed);
+    state.moveRanks = state.moveRanks.filter((r) => r.whiteMoveIndex <= whiteMovesPlayed);
+    toRemove.forEach((r) => clearScorecardCell(r.whiteMoveIndex));
   }
   state.board.setPosition(state.chess.fen(), true);
   updatePhaseChip(state.ply);

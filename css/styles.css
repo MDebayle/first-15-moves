@@ -1840,3 +1840,175 @@ body.has-played .preplay-only { display: none; }
   .help-footer { padding: var(--space-3) var(--space-4); }
   .help-header h2 { font-size: 1.35rem; }
 }
+
+/* ========================================================================
+   Scorecard — 2x8 grid under the board (4x4 on narrow viewports).
+   Replaces the old static phase strip. Fills in live as the player moves.
+   ======================================================================== */
+.scorecard {
+  margin-top: var(--space-4);
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--cream-200);
+}
+.scorecard-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  padding: 0 2px;
+}
+.scorecard-title {
+  font-family: var(--font-serif, serif);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink-900);
+  letter-spacing: 0.01em;
+}
+.scorecard-hint {
+  font-size: 0.78rem;
+  color: var(--ink-500);
+  font-style: italic;
+}
+.scorecard-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 6px;
+}
+.scorecard-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: var(--cream-100);
+  border: 1px solid var(--cream-300);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--ink-500);
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  overflow: hidden;
+}
+.scorecard-cell .cell-index {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  font-size: 0.65rem;
+  color: var(--ink-300);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.scorecard-cell .cell-rank {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink-900);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.scorecard-cell .cell-of {
+  font-size: 0.65rem;
+  color: var(--ink-500);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.scorecard-cell.empty .cell-rank,
+.scorecard-cell.empty .cell-of {
+  display: none;
+}
+.scorecard-cell.empty::after {
+  /* subtle center dot for empty placeholder */
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--cream-300);
+}
+
+/* Filled (non-medal) states — a soft glow that says "recorded". */
+.scorecard-cell.filled {
+  background: var(--cream-50);
+  border-color: var(--sage-500);
+  animation: scorecardPop 0.35s ease;
+}
+
+/* Medal cells get a distinct chromatic treatment + a medal glyph. */
+.scorecard-cell.medal {
+  animation: scorecardPop 0.45s ease;
+}
+.scorecard-cell.medal .cell-rank,
+.scorecard-cell.medal .cell-of {
+  display: none;
+}
+.scorecard-cell.medal .medal-icon {
+  width: 62%;
+  height: 62%;
+  display: block;
+}
+.scorecard-cell.medal-gold {
+  background: #fbf3d9;
+  border-color: var(--gold-500);
+  box-shadow: 0 0 0 2px rgba(199, 154, 60, 0.22);
+}
+.scorecard-cell.medal-silver {
+  background: #eef1f3;
+  border-color: #9ca9b0;
+}
+.scorecard-cell.medal-bronze {
+  background: #f4e4d3;
+  border-color: #b0794d;
+}
+
+/* The 16th box — the session-average percentile. Distinct from the per-move cells. */
+.scorecard-cell.final {
+  background: var(--sage-100);
+  border: 1px dashed var(--sage-500);
+  color: var(--sage-900);
+}
+.scorecard-cell.final.filled {
+  background: var(--sage-900);
+  border: 1px solid var(--sage-900);
+  color: var(--cream-50);
+  box-shadow: 0 2px 10px rgba(31, 77, 64, 0.22);
+}
+.scorecard-cell.final .cell-rank {
+  font-size: 1.05rem;
+  color: var(--cream-50);
+}
+.scorecard-cell.final .cell-of {
+  color: var(--cream-100);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.scorecard-cell.final.empty::after {
+  width: 6px;
+  height: 6px;
+  background: var(--sage-500);
+}
+
+@keyframes scorecardPop {
+  0%   { transform: scale(0.88); }
+  60%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+@media (max-width: 720px) {
+  .scorecard-grid {
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+  }
+  .scorecard-cell .cell-rank { font-size: 1rem; }
+  .scorecard-cell .cell-index { font-size: 0.6rem; }
+  .scorecard-hint {
+    display: none; /* save vertical space on phones */
+  }
+}
+@media (max-width: 420px) {
+  .scorecard-grid { gap: 4px; }
+  .scorecard-cell .cell-rank { font-size: 0.9rem; }
+}
