@@ -58,6 +58,7 @@ import {
   SECOND_MOVE_OPENING_FALLBACK,
   SECOND_MOVE_FALLBACK,
 } from "../data/secondMoveAdvice.js";
+import { buildOpponentOpeningNote } from "./identifyBlackOpening.js";
 
 const MAX_PLIES = 30; // 15 full moves
 const DEFAULT_OPENING_ID = "italian"; // auto-start with the Italian Game
@@ -991,6 +992,7 @@ async function computerReply() {
             state.evalHistory.push(evalAfter);
             updatePhaseChip(state.ply);
             renderHistory();
+            renderOpponentOpeningNote();
             return;
           }
         }
@@ -1030,6 +1032,7 @@ async function computerReply() {
 
   updatePhaseChip(state.ply);
   renderHistory();
+  renderOpponentOpeningNote();
   if (state.overlayThreats) applyThreatOverlay();
   if (state.overlayCenter) applyCenterOverlay();
 
@@ -1521,6 +1524,58 @@ function escapeAndBold(text) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
   return esc.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+// ---------- Notes on Opponent's Opening ----------
+// Updates the "Notes on opponent's opening" block under the scorecard after
+// every Black move. Identifies what Black is playing (or appears to be
+// playing), explains why, and tells the student the most likely next Black
+// moves so they can prepare. Silent until Black has actually moved.
+function renderOpponentOpeningNote() {
+  const body = document.getElementById("opponentNotesBody");
+  if (!body) return;
+
+  // The identifier expects the full history objects ({ ply, san, ... }).
+  const history = state.history || [];
+  const whiteFirst = history[0] ? history[0].san : null;
+
+  // No Black move yet — show the empty-state copy.
+  const blackHasMoved = history.some((h) => h && h.ply % 2 === 0);
+  if (!blackHasMoved) {
+    body.innerHTML =
+      '<p class="opponent-notes-empty">Black hasn&rsquo;t moved yet. Notes appear here after Black&rsquo;s first move.</p>';
+    return;
+  }
+
+  let note = null;
+  try {
+    note = buildOpponentOpeningNote(history, whiteFirst);
+  } catch (err) {
+    console.warn("identifyBlackOpening failed:", err);
+  }
+
+  if (!note) {
+    body.innerHTML =
+      '<p class="opponent-notes-empty">Black&rsquo;s plan isn&rsquo;t settled yet. Keep watching the centre.</p>';
+    return;
+  }
+
+  const altHtml = note.altName
+    ? ` <span class="opponent-notes-alt">&mdash; or possibly the ${escapeHtml(note.altName)}</span>`
+    : "";
+  const blurbHtml = note.blurb
+    ? `<p class="opponent-notes-blurb">${escapeHtml(note.blurb)}</p>`
+    : "";
+  const nextHtml = note.nextMoves
+    ? `<span class="opponent-notes-next-label">Likely next for Black</span>
+       <p class="opponent-notes-next">${escapeHtml(note.nextMoves)}</p>`
+    : "";
+
+  body.innerHTML = `
+    <p class="opponent-notes-name">${escapeHtml(note.title)}${altHtml}</p>
+    ${blurbHtml}
+    ${nextHtml}
+  `;
 }
 
 // ---------- Annotated move log ----------
