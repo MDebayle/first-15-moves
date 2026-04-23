@@ -66,7 +66,17 @@ import { getPawnAdvice } from "../data/pawnAdvice.js";
 import { getQueenAdvice } from "../data/queenAdvice.js";
 import { getRookAdvice, buildCastlingNudge } from "../data/rookAdvice.js";
 import { getKingAdvice, getKingCastleUrgency, getDelayedCastleWarning } from "../data/kingAdvice.js";
+import {
+  getCastlingAdvice,
+  detectCastlingPrep,
+  castlingTierIsPressing,
+  buildPostMoveCastlingCritique,
+} from "../data/castlingAdvice.js";
 import { buildRoleAwareLine, buildNextActorSuggestion } from "../data/pieceRoles.js";
+import {
+  getLeadSquaresNow,
+  getReserveSquaresNow,
+} from "../data/actorRoles.js";
 import { getOpeningManual, getOpeningThemeLine } from "../data/openingManual.js";
 import { buildOpponentOpeningNote } from "./identifyBlackOpening.js";
 
@@ -145,6 +155,8 @@ const state = {
   selectedHistoryPly: null,
   overlayCenter: false,
   overlayThreats: false,
+  overlayLeads: false,
+  overlayReserves: false,
   hintStepIndex: 0,
   hintLadderSteps: [],
   // Scorecard state
@@ -298,13 +310,9 @@ function updateMedalStreak(earnedMedal) {
 // always mentions "unassisted" — that's the whole point: this reward is
 // reserved for players who didn't lean on the Hint or Take Back buttons.
 function streakCopy(n) {
-  if (n === 3) return "3 in a row \u2014 unassisted";
-  if (n === 4) return "4-move streak \u2014 unassisted";
-  if (n === 5) return "5 flawless, unassisted";
-  if (n === 6) return "6 straight, zero assists";
-  if (n === 7) return "7 in a row, all your own";
-  if (n >= 8) return n + " straight \u2014 unassisted";
-  return "";
+  // Celebratory single format across every tier. Loud, unambiguous, gold.
+  if (n < 3) return "";
+  return n + " MEDAL STREAK!";
 }
 
 // Paint or hide the streak banner based on state.medalStreak. Called from
@@ -712,6 +720,7 @@ async function startGame(openingId) {
   // Re-apply any active overlays on the fresh board
   if (state.overlayCenter) applyCenterOverlay();
   if (state.overlayThreats) applyThreatOverlay();
+  scheduleActorOverlayRefresh();
 
   // Boot the engine if not already
   if (!state.engine) {
@@ -846,6 +855,22 @@ async function commitStudentMove(moveSpec) {
   // this turn, the resulting move is "assisted" and won't be awarded a medal.
   const assisted = state.hintUsedThisTurn || state.takeBackUsedThisTurn;
 
+  // Snapshot castling advice BEFORE the move. The post-move critique can
+  // use this to append a "you skipped castling when it was pressing" note
+  // on the verdict's effect line when the player chose something else.
+  let preMoveCastlingAdvice = null;
+  try {
+    const _openingId = state.opening && state.opening.id;
+    const _histSan = state.chess.history();
+    const _nextPly = state.ply + 1;
+    preMoveCastlingAdvice = getCastlingAdvice({
+      openingId: _openingId,
+      historySan: _histSan,
+      nextPly: _nextPly,
+    });
+  } catch (_) { /* best-effort */ }
+  state._preMoveCastlingAdvice = preMoveCastlingAdvice;
+
   const moveObj = state.chess.move(moveSpec);
   if (!moveObj) return;
 
@@ -943,6 +968,7 @@ async function commitStudentMove(moveSpec) {
   renderHistory();
   if (state.overlayThreats) applyThreatOverlay();
   if (state.overlayCenter) applyCenterOverlay();
+  scheduleActorOverlayRefresh();
 
   // How many White moves has the student made? After White's Nth move, state.ply === 2N - 1.
   const whitePliesPlayed = Math.ceil(state.ply / 2);
@@ -1073,6 +1099,7 @@ async function computerReply() {
   renderOpponentOpeningNote();
   if (state.overlayThreats) applyThreatOverlay();
   if (state.overlayCenter) applyCenterOverlay();
+  scheduleActorOverlayRefresh();
 
   // The 15-move cap is now handled in commitStudentMove (fires after Black's
   // reply to White's 15th). Here we only fire on actual game-over mid-session.
@@ -1427,6 +1454,25 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       }
     } catch (_) { /* localStorage unavailable */ }
   }
+
+  // Castling philosophy footnote: if castling was pressing BEFORE this move
+  // (urge/warn/critical or prep-needed) and the student chose something
+  // other than O-O or a prep move, append a short urgency note. This is
+  // how the castling philosophy document reaches the verdict card — the
+  // coach calls out delay on every turn it happens, not just once.
+  try {
+    const _pre = state._preMoveCastlingAdvice;
+    if (_pre && castlingTierIsPressing(_pre.tier)) {
+      const _footnote = buildPostMoveCastlingCritique({
+        san: moveObj && moveObj.san,
+        advice: _pre,
+      });
+      if (_footnote) {
+        effectTxt = (effectTxt ? effectTxt + " " : "") + _footnote;
+      }
+    }
+  } catch (_) { /* best-effort */ }
+
   if (effectEl) {
     effectEl.innerHTML = escapeAndBold(effectTxt || "—");
     delete effectEl.dataset.planReconciled;
@@ -1757,6 +1803,58 @@ function renderCoachPrompt(ply) {
       /^Your king is still in the center\. Castling/.test(primary);
     if (castlingNudge && primaryIsCastlingHint) {
       primary = castlingNudge;
+    }
+  } catch (_) { /* best-effort */ }
+
+  // Castling philosophy tiered upgrade: if the coach's castling module
+  // returns a pressing tier (urge/warn/critical/prep) this turn, it should
+  // take precedence over generic development/planning advice. This is the
+  // "push castling on every turn inside and past the window" behavior from
+  // the castling philosophy doc. A check or tactical shock is still higher
+  // priority and keeps the existing primary intact.
+  let castlingTier = "none";
+  try {
+    const _openingId = state.opening && state.opening.id;
+    const _hist = (state.history || []).map((h) => h.san).filter(Boolean);
+    const castleAdvice = getCastlingAdvice({
+      openingId: _openingId,
+      historySan: _hist,
+      nextPly,
+    });
+    castlingTier = (castleAdvice && castleAdvice.tier) || "none";
+
+    // Keep higher-priority primaries (checks, tactical shocks, recaptures).
+    const primaryIsBlocking =
+      /puts you in check/.test(primary) ||
+      /Deal with the check/.test(primary) ||
+      /just captured/.test(primary) ||
+      /Recapture/.test(primary);
+
+    if (!primaryIsBlocking && castleAdvice && castleAdvice.line) {
+      if (castlingTier === "critical" || castlingTier === "warn") {
+        // Always promote: past window = strongest override.
+        primary = castleAdvice.line;
+      } else if (castlingTier === "urge") {
+        // Promote unless primary is already a specific tactical/capture
+        // line. A generic development or planning line loses here.
+        primary = castleAdvice.line;
+      } else if (castlingTier === "prep") {
+        // Promote whenever primary is generic development advice OR the
+        // generic castle-reminder line — the prep line is opening-specific
+        // AND more actionable (it names the actual unblocking move).
+        const primaryIsGenericDev =
+          /^Keep the center solid/.test(primary) ||
+          /^Get your next minor piece/.test(primary) ||
+          /^You're into the planning phase/.test(primary) ||
+          /^Stake the center first\. A pawn/.test(primary) ||
+          /^With the king safe, start activating/.test(primary) ||
+          /^Your king is still in the center/.test(primary);
+        if (primaryIsGenericDev) {
+          primary = castleAdvice.line;
+        }
+      }
+      // tier === "suggest" is already covered by the existing rook-nudge
+      // machinery above; no override needed here.
     }
   } catch (_) { /* best-effort */ }
 
@@ -2224,6 +2322,87 @@ function applyThreatOverlay() {
   });
 }
 
+// ---- Actor-role overlay (Lead / Reserve) --------------------------------
+// Identifies pieces that define the current opening ("leads") by tinting them
+// gold, and de-emphasizes reserve pieces by halving their opacity. Tracks
+// pieces by ORIGIN square via data/actorRoles.js, so a pawn that moved keeps
+// its tag on its current square.
+function _getBoardRootEl() {
+  return (
+    (state.board && state.board.view && state.board.view.svg) ||
+    document.querySelector(".cm-chessboard")
+  );
+}
+
+function applyActorOverlay() {
+  const rootEl = _getBoardRootEl();
+  if (!rootEl) return;
+  // Clear previous tags on every refresh — simpler than diffing and cheap.
+  rootEl.querySelectorAll("g[data-square].is-lead, g[data-square].is-reserve")
+    .forEach((el) => el.classList.remove("is-lead", "is-reserve"));
+
+  const openingId = state.opening && state.opening.id;
+  if (!openingId || !state.chess) return;
+
+  if (state.overlayLeads) {
+    const leadSquares = getLeadSquaresNow(openingId, state.chess);
+    leadSquares.forEach((sq) => {
+      const node = rootEl.querySelector(`g[data-square="${sq}"]`);
+      if (node) node.classList.add("is-lead");
+    });
+  }
+  if (state.overlayReserves) {
+    const reserveSquares = getReserveSquaresNow(openingId, state.chess);
+    reserveSquares.forEach((sq) => {
+      const node = rootEl.querySelector(`g[data-square="${sq}"]`);
+      if (node) node.classList.add("is-reserve");
+    });
+  }
+}
+
+// cm-chessboard rebuilds the <g data-square> nodes on every setPosition(),
+// which strips any classes we added. To keep our tags stuck across moves
+// and animations, we attach a MutationObserver to the pieces layer: any
+// time child nodes are added, we re-tag. The observer is installed lazily
+// on the first actor-overlay activation and left in place for the session.
+let _actorMutObs = null;
+let _actorRetagPending = false;
+function _installActorObserver() {
+  if (_actorMutObs) return;
+  const rootEl = _getBoardRootEl();
+  if (!rootEl) return;
+  // Observe only childList mutations on the pieces container — we DON'T observe
+  // attribute changes (which would loop forever when we set is-lead/is-reserve).
+  _actorMutObs = new MutationObserver((mutations) => {
+    if (!state.overlayLeads && !state.overlayReserves) return;
+    // Ignore mutations that were just our own class changes.
+    const pieceRebuilt = mutations.some((m) =>
+      m.type === "childList" && (m.addedNodes.length > 0 || m.removedNodes.length > 0)
+    );
+    if (!pieceRebuilt) return;
+    if (_actorRetagPending) return;
+    _actorRetagPending = true;
+    requestAnimationFrame(() => {
+      _actorRetagPending = false;
+      applyActorOverlay();
+    });
+  });
+  _actorMutObs.observe(rootEl, { childList: true, subtree: true });
+}
+
+// Defer past cm-chessboard's piece animation (~300ms) before tagging. Piece
+// nodes are swapped DURING the animation, so tagging inside rAF would be wiped
+// out by the subsequent DOM swap. We also run an immediate pass and a final
+// pass to cover instant (non-animated) position updates.
+function scheduleActorOverlayRefresh() {
+  if (!state.overlayLeads && !state.overlayReserves) return;
+  _installActorObserver();
+  // Immediate pass: catches synchronous re-renders (e.g. setPosition(fen, false)).
+  requestAnimationFrame(() => applyActorOverlay());
+  // Post-animation pass: catches the DOM after cm-chessboard's move animation settles.
+  setTimeout(() => applyActorOverlay(), 360);
+}
+
 function toggleOverlay(which) {
   if (which === "center") {
     state.overlayCenter = !state.overlayCenter;
@@ -2233,6 +2412,18 @@ function toggleOverlay(which) {
     state.overlayThreats = !state.overlayThreats;
     document.getElementById("btnOverlayThreats").setAttribute("aria-pressed", String(state.overlayThreats));
     applyThreatOverlay();
+  } else if (which === "leads") {
+    state.overlayLeads = !state.overlayLeads;
+    document.getElementById("btnOverlayLeads").setAttribute("aria-pressed", String(state.overlayLeads));
+    try { localStorage.setItem("f15m_overlay_leads", state.overlayLeads ? "1" : "0"); } catch (_) {}
+    if (state.overlayLeads) _installActorObserver();
+    applyActorOverlay();
+  } else if (which === "reserves") {
+    state.overlayReserves = !state.overlayReserves;
+    document.getElementById("btnOverlayReserves").setAttribute("aria-pressed", String(state.overlayReserves));
+    try { localStorage.setItem("f15m_overlay_reserves", state.overlayReserves ? "1" : "0"); } catch (_) {}
+    if (state.overlayReserves) _installActorObserver();
+    applyActorOverlay();
   }
 }
 
@@ -2464,6 +2655,83 @@ function undoLast() {
   state.inputLocked = false;
 }
 
+// Castling-aware hint ladder. When getCastlingAdvice returns a pressing
+// tier (urge/warn/critical/prep), this override builds a 4-step ladder
+// focused on castling reasoning instead of generic phase/development
+// advice. Levels:
+//   1) Why castling is urgent right now (tiered line from castlingAdvice)
+//   2) What's in the way (prep-needed) OR what castling accomplishes
+//   3) Candidate moves (O-O or the specific prep move)
+//   4) The concrete best move (**O-O** or **Nf3** etc.)
+function buildCastlingHintLadder({ tier, line, prep, chess, engineBestSan }) {
+  const steps = [];
+
+  // Step 1: the tier-specific urgency line.
+  steps.push(line || "Castling is now the most important decision on the board.");
+
+  // Step 2: what's blocking castling, or why it matters.
+  if (tier === "prep" && prep) {
+    if (prep.missingKnight && prep.missingBishop) {
+      steps.push("Castling is blocked by BOTH the knight on g1 and the bishop on f1. Both pieces need to move before O-O becomes legal. The knight first — **Nf3** — because it commits the least and supports the center.");
+    } else if (prep.missingKnight) {
+      steps.push("The knight is still on g1. Until it moves, O-O is literally illegal. Moving it IS the castling prep — one move away from the goal.");
+    } else if (prep.missingBishop) {
+      steps.push("The kingside bishop is still on f1, blocking the castle. The bishop and the castle are the same problem — developing the bishop enables O-O in the same motion.");
+    } else {
+      steps.push("Castling solves two problems at once — king safety AND h1-rook development — in a single tempo. That's why it's the best deal in the opening.");
+    }
+  } else {
+    steps.push("Every move the king stays on e1 is a move you're taxing yourself for. Castling is the single highest-value move in the opening — king safety and rook development in one tempo.");
+  }
+
+  // Step 3: candidate moves.
+  const legal = chess.moves();
+  if (tier === "prep" && prep) {
+    const candidates = [];
+    if (prep.missingKnight && legal.includes("Nf3")) candidates.push("Nf3");
+    if (prep.missingBishop) {
+      ["Bc4", "Bb5", "Bd3", "Be2", "Bg2"].forEach((s) => {
+        if (legal.includes(s)) candidates.push(s);
+      });
+    }
+    if (candidates.length > 0) {
+      steps.push(`Castling prep candidates: ${candidates.map((c) => `**${c}**`).join(", ")}. Each opens the path to O-O.`);
+    } else {
+      steps.push("Look for any move that clears the rank between your king and h1 — that's the real candidate list this turn.");
+    }
+  } else {
+    if (legal.includes("O-O")) {
+      steps.push("There's really only one candidate this turn: **O-O**. Every other move concedes king safety for something less valuable.");
+    } else {
+      steps.push("Castling should be the top candidate, but the path isn't clear yet. Find the move that finishes unblocking it.");
+    }
+  }
+
+  // Step 4: the concrete best move.
+  if (legal.includes("O-O") && (tier === "urge" || tier === "warn" || tier === "critical" || tier === "suggest")) {
+    steps.push("The best move is **O-O**. Nothing else on the board produces comparable value this turn.");
+  } else if (tier === "prep" && prep) {
+    // Suggest the first legal prep move we can.
+    const first =
+      (prep.missingKnight && legal.includes("Nf3") && "Nf3") ||
+      (prep.missingBishop && ["Bc4", "Bb5", "Bd3", "Be2", "Bg2"].find((s) => legal.includes(s))) ||
+      null;
+    if (first) {
+      steps.push(`The best move is **${first}** — it develops AND enables castling next turn.`);
+    } else if (engineBestSan) {
+      steps.push(`The engine's top pick is **${engineBestSan}**. Use this move to set up O-O.`);
+    } else {
+      steps.push("Pick the move that most directly opens the path to O-O.");
+    }
+  } else if (engineBestSan) {
+    steps.push(`The engine's top pick is **${engineBestSan}**. If you can, play O-O; otherwise this is the move.`);
+  } else {
+    steps.push("Castle if you can. If castling is blocked, play the move that unblocks it.");
+  }
+
+  return steps;
+}
+
 async function showHint() {
   if (state.inputLocked) return;
   if (state.chess.turn() !== "w") return;
@@ -2491,12 +2759,39 @@ async function showHint() {
   }
 
   const ply = state.ply + 1; // next ply (White to move)
-  const steps = buildHintLadder({
-    ply,
-    opening: state.opening,
-    chess: state.chess,
-    engineBestSan,
-  });
+
+  // Castling philosophy override: if castling is urge/warn/critical/prep,
+  // the hint ladder should lead with castling reasoning, not generic
+  // phase advice. This keeps the coach consistent — the Your Move card
+  // is saying "castle now" and the hint ladder agrees.
+  let steps;
+  try {
+    const _openingId = state.opening && state.opening.id;
+    const _histSan = state.chess.history();
+    const castleAdvice = getCastlingAdvice({
+      openingId: _openingId,
+      historySan: _histSan,
+      nextPly: ply,
+    });
+    if (castleAdvice && castlingTierIsPressing(castleAdvice.tier)) {
+      steps = buildCastlingHintLadder({
+        tier: castleAdvice.tier,
+        line: castleAdvice.line,
+        prep: castleAdvice.prep,
+        chess: state.chess,
+        engineBestSan,
+      });
+    }
+  } catch (_) { /* best-effort */ }
+
+  if (!steps) {
+    steps = buildHintLadder({
+      ply,
+      opening: state.opening,
+      chess: state.chess,
+      engineBestSan,
+    });
+  }
   state.hintLadderSteps = steps;
   state.hintStepIndex = 0;
 
@@ -2735,8 +3030,25 @@ document.addEventListener("click", (e) => {
 // Overlay toggles
 const btnCenter = document.getElementById("btnOverlayCenter");
 const btnThreats = document.getElementById("btnOverlayThreats");
+const btnLeads = document.getElementById("btnOverlayLeads");
+const btnReserves = document.getElementById("btnOverlayReserves");
 if (btnCenter) btnCenter.addEventListener("click", () => toggleOverlay("center"));
 if (btnThreats) btnThreats.addEventListener("click", () => toggleOverlay("threats"));
+if (btnLeads) btnLeads.addEventListener("click", () => toggleOverlay("leads"));
+if (btnReserves) btnReserves.addEventListener("click", () => toggleOverlay("reserves"));
+
+// Restore Lead/Reserve overlay prefs — these persist across sessions so
+// returning students don't have to re-enable them every visit.
+try {
+  if (localStorage.getItem("f15m_overlay_leads") === "1") {
+    state.overlayLeads = true;
+    if (btnLeads) btnLeads.setAttribute("aria-pressed", "true");
+  }
+  if (localStorage.getItem("f15m_overlay_reserves") === "1") {
+    state.overlayReserves = true;
+    if (btnReserves) btnReserves.setAttribute("aria-pressed", "true");
+  }
+} catch (_) {}
 
 // Kick things off: auto-start with the default opening so the board is live on load.
 // If the student previously chose an opening, restore it — studying one opening

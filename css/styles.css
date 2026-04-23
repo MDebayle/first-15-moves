@@ -1605,32 +1605,46 @@ body.has-played .preplay-only { display: none; }
   margin-left: auto;       /* push to the right side of the flex head */
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: 8px;
+  /* Significantly larger chip — it should feel like a reward, not a label. */
+  padding: 8px 16px;
   border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   line-height: 1.1;
-  background: var(--sage-100, #e7f0ec);
-  color: var(--sage-900, #1f4a3b);
-  border: 1px solid var(--sage-300, #b6d0c3);
+  text-transform: uppercase;
+  /* Bright gold gradient — this pill is a celebration, not a tag. A streak
+     of three unassisted bronze moves is still gold-worthy effort. */
+  background: linear-gradient(135deg, #ffe66b 0%, #f6b93b 100%);
+  color: #6b4a00;
+  border: 2px solid #d99c00;
   white-space: nowrap;
-  /* Small shadow gives the pill a little lift without being loud. */
-  box-shadow: 0 1px 0 rgba(31, 74, 59, 0.04);
+  /* Layered shadow: soft lift + inner highlight for a jewel-like feel. */
+  box-shadow:
+    0 2px 6px rgba(185, 130, 0, 0.3),
+    0 0 0 1px rgba(255, 215, 85, 0.5) inset;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 .verdict-streak[hidden] { display: none; }
 .verdict-streak-flame {
-  font-size: 0.85rem;
+  /* Larger, more prominent star to match the bigger chip. */
+  font-size: 1.1rem;
   line-height: 1;
   transform: translateY(-1px);
+  color: #c78800;
+  filter: drop-shadow(0 1px 0 rgba(255,255,255,0.5));
 }
+/* The "hot" tier kicks in at 5+ — same gold family, a little more intense. */
 .verdict-streak-hot {
-  background: linear-gradient(135deg, #fff4e0 0%, #ffe3b5 100%);
-  color: var(--clay-900, #6b2e17);
-  border-color: #f1c98a;
+  background: linear-gradient(135deg, #ffd93b 0%, #ff9f1c 100%);
+  color: #5c3000;
+  border-color: #c07800;
+  box-shadow:
+    0 3px 10px rgba(200, 120, 0, 0.45),
+    0 0 0 1px rgba(255, 220, 100, 0.6) inset;
 }
-.verdict-streak-hot .verdict-streak-flame { color: #c76a1b; }
+.verdict-streak-hot .verdict-streak-flame { color: #a95e00; }
 @keyframes verdict-streak-pop {
   0%   { transform: scale(0.8); opacity: 0; }
   60%  { transform: scale(1.08); opacity: 1; }
@@ -1646,8 +1660,10 @@ body.has-played .preplay-only { display: none; }
   .verdict-streak {
     margin-left: 0;
     flex-basis: 100%;
-    justify-content: flex-start;
-    margin-top: 4px;
+    justify-content: center;   /* on its own row — center the celebration */
+    margin-top: 6px;
+    font-size: 1.02rem;
+    padding: 10px 18px;
   }
 }
 
@@ -2396,4 +2412,34 @@ body.has-played .preplay-only { display: none; }
   .scorecard-cell .cell-rank { font-size: 1.05rem; }
   .scorecard-cell .cell-of { font-size: 0.75rem; }
   .scorecard-cell.final .cell-rank { font-size: 1rem; }
+}
+
+/* ---- Actor-role overlays (Lead / Reserve) ------------------------------
+ * Gold tint for lead actors, half-opacity for reserves. Applied via classes
+ * added to cm-chessboard's <g data-square="..."> wrappers by applyActorOverlay().
+ * Piece elements render as <g data-square="XX"><use href="#wX" class="piece"/></g>.
+ * We keep the filter on the <use> so the transform stays crisp, and add a
+ * subtle drop-shadow so the gold reads on both light and dark squares.
+ */
+.cm-chessboard g[data-square].is-lead use.piece {
+  /* Push the fill toward a warm gold and add a halo. The sepia+saturate+hue
+   * pipeline converts the monochrome SVG sprites into a saturated gold across
+   * both white and black pieces (the manual only tracks white, but we keep
+   * this general in case future openings tag black pieces too). */
+  filter:
+    brightness(1.1)
+    sepia(1)
+    saturate(5.5)
+    hue-rotate(-18deg)
+    drop-shadow(0 0 2.5px rgba(255, 216, 90, 0.85))
+    drop-shadow(0 0 1px rgba(255, 190, 40, 0.9));
+}
+.cm-chessboard g[data-square].is-reserve use.piece {
+  opacity: 0.42;
+  transition: opacity 0.18s ease;
+}
+/* If a square is tagged as BOTH (shouldn't happen per the manual, but just in
+ * case), lead tint wins and we back off the reserve fade so it's still visible. */
+.cm-chessboard g[data-square].is-lead.is-reserve use.piece {
+  opacity: 0.75;
 }
