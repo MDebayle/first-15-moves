@@ -62,6 +62,7 @@ import { getQueensideBishopAdvice } from "../data/queensideBishopAdvice.js";
 import { getKingsideBishopAdvice } from "../data/kingsideBishopAdvice.js";
 import { getQueensideKnightAdvice } from "../data/queensideKnightAdvice.js";
 import { getKingsideKnightAdvice } from "../data/kingsideKnightAdvice.js";
+import { getPawnAdvice } from "../data/pawnAdvice.js";
 import { buildOpponentOpeningNote } from "./identifyBlackOpening.js";
 
 const MAX_PLIES = 30; // 15 full moves
@@ -1284,6 +1285,27 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       ply,
     });
     if (knLine) effectTxt = knLine;
+  }
+
+  // Pawn override: pawns are the soul of any opening and their moves are
+  // nearly irreversible. This override fires for every pawn move on ply 2+
+  // (ply 1 is handled by FIRST_MOVE_ADVICE and integrated with that curated
+  // table, per the user's explicit directive). The pawn advice module
+  // classifies every pawn into one of four roles per opening — identity,
+  // support, reserve, avoid — drawn directly from the pawn strategy report.
+  if (moveObj && moveObj.piece === "p") {
+    const openingId = state.opening && state.opening.id;
+    const prevSan = (state.history || [])
+      .slice(0, -1)
+      .map((h) => h.san)
+      .filter(Boolean);
+    const pLine = getPawnAdvice({
+      moveObj,
+      openingId,
+      historySan: prevSan,
+      ply,
+    });
+    if (pLine) effectTxt = pLine;
   }
 
   // One-time teaching line on the first "book" move: emphasize that book is
