@@ -1032,6 +1032,44 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
   renderAlternatives(verdict, alternatives);
 }
 
+// Turn a SAN string into a plain-English move phrase. Beginners can't always
+// parse notation like "e3" (is that a square? a move?) so we spell it out:
+//   e3   → "Pawn to e3"
+//   Nf3  → "Knight to f3"
+//   Bxc4 → "Bishop takes c4"
+//   O-O  → "Castle kingside"
+//   a8=Q → "Pawn to a8 (promotes to Queen)"
+function sanToPlainEnglish(san) {
+  if (!san) return "";
+  const raw = String(san);
+  // Castling is a special case.
+  if (/^O-O-O/.test(raw)) return "Castle queenside";
+  if (/^O-O/.test(raw)) return "Castle kingside";
+
+  const pieceMap = { K: "King", Q: "Queen", R: "Rook", B: "Bishop", N: "Knight" };
+  // Strip trailing check/mate markers for parsing
+  const bare = raw.replace(/[+#!?]+$/g, "");
+
+  // Promotion: trailing "=Q" etc.
+  let promo = "";
+  const promoMatch = bare.match(/=([QRBN])$/);
+  const woPromo = promoMatch ? bare.slice(0, -2) : bare;
+  if (promoMatch) promo = ` (promotes to ${pieceMap[promoMatch[1]]})`;
+
+  // Destination square is always the last 2 chars of the pre-promotion portion.
+  const dest = woPromo.slice(-2);
+  const rest = woPromo.slice(0, -2);
+  const isCapture = rest.includes("x");
+
+  // First char tells us the piece. Uppercase = piece move; lowercase letter
+  // or empty = pawn move.
+  const firstChar = rest[0];
+  const piece = pieceMap[firstChar] || "Pawn";
+
+  const verb = isCapture ? "takes" : "to";
+  return `${piece} ${verb} ${dest}${promo}`;
+}
+
 function renderAlternatives(verdict, alternatives) {
   const container = document.getElementById("coachAlternatives");
   const list = document.getElementById("altsList");
@@ -1043,10 +1081,11 @@ function renderAlternatives(verdict, alternatives) {
   // Build the shown set: include the mainline if the player deviated, plus any tree alts.
   const shown = [];
   if (!verdict.isMainline && verdict.recommended) {
+    const openingName = (state.opening && state.opening.name) ? state.opening.name : "this opening";
     shown.push({
       san: verdict.recommended,
       label: "mainline",
-      why: "The main line here — sets up the standard plan for this opening.",
+      why: `The main ${openingName} move here — the move most players choose in this position.`,
     });
   }
   alts.forEach((a) => {
@@ -1066,8 +1105,10 @@ function renderAlternatives(verdict, alternatives) {
     const tagText = alt.label === "mainline"
       ? "Main line"
       : (alt.label ? alt.label[0].toUpperCase() + alt.label.slice(1) : "Playable");
+    const plain = sanToPlainEnglish(alt.san);
     li.innerHTML =
       `<span class="alt-san">${escapeHtml(alt.san)}</span>` +
+      `<span class="alt-plain">${escapeHtml(plain)}</span>` +
       `<span class="alt-tag ${tagClass}">${escapeHtml(tagText)}</span>` +
       (alt.why ? escapeAndBold(alt.why) : "");
     list.appendChild(li);

@@ -1203,6 +1203,11 @@ body.coach-off .overlay-toolbar {
   color: var(--ink-900);
   margin-right: var(--space-2);
 }
+.alts-list .alt-plain {
+  color: var(--ink-500);
+  font-size: 0.78rem;
+  margin-right: var(--space-2);
+}
 .alts-list .alt-tag {
   font-size: 0.64rem;
   font-weight: 700;
@@ -1905,13 +1910,13 @@ body.has-played .preplay-only { display: none; }
 }
 .scorecard-cell .cell-rank {
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 1.15rem;
   color: var(--ink-900);
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 .scorecard-cell .cell-of {
-  font-size: 0.65rem;
+  font-size: 0.78rem;
   color: var(--ink-500);
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -1945,22 +1950,25 @@ body.has-played .preplay-only { display: none; }
   display: none;
 }
 .scorecard-cell.medal .medal-icon {
-  width: 62%;
-  height: 62%;
+  width: 76%;
+  height: 76%;
   display: block;
+  filter: saturate(1.15) contrast(1.05);
 }
 .scorecard-cell.medal-gold {
-  background: #fbf3d9;
+  background: #fcefc4;
   border-color: var(--gold-500);
-  box-shadow: 0 0 0 2px rgba(199, 154, 60, 0.22);
+  box-shadow: 0 0 0 2px rgba(199, 154, 60, 0.3);
 }
 .scorecard-cell.medal-silver {
-  background: #eef1f3;
-  border-color: #9ca9b0;
+  background: #e6ebef;
+  border-color: #8a97a0;
+  box-shadow: 0 0 0 2px rgba(138, 151, 160, 0.22);
 }
 .scorecard-cell.medal-bronze {
-  background: #f4e4d3;
-  border-color: #b0794d;
+  background: #f2dcc4;
+  border-color: #a66a3a;
+  box-shadow: 0 0 0 2px rgba(166, 106, 58, 0.22);
 }
 
 /* The 16th box — the session-average percentile. Distinct from the per-move cells. */
@@ -1968,6 +1976,9 @@ body.has-played .preplay-only { display: none; }
   background: var(--sage-100);
   border: 1px dashed var(--sage-500);
   color: var(--sage-900);
+  /* Center the percentile cleanly and give the inner bits breathing room. */
+  padding: 6px 4px;
+  gap: 3px;
 }
 .scorecard-cell.final.filled {
   background: var(--sage-900);
@@ -1975,15 +1986,29 @@ body.has-played .preplay-only { display: none; }
   color: var(--cream-50);
   box-shadow: 0 2px 10px rgba(31, 77, 64, 0.22);
 }
+/* The "Final" label on the filled cell: demote to a small eyebrow so it
+   doesn't compete with the percentile, and keep it out of the top-left
+   corner where it overlapped "Top 31%" at tight widths. */
+.scorecard-cell.final.filled .cell-index {
+  position: static;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cream-100);
+  opacity: 0.85;
+  font-weight: 600;
+}
 .scorecard-cell.final .cell-rank {
   font-size: 1.05rem;
   color: var(--cream-50);
+  white-space: nowrap;
+  font-weight: 700;
 }
 .scorecard-cell.final .cell-of {
   color: var(--cream-100);
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 .scorecard-cell.final.empty::after {
   width: 6px;
@@ -2002,13 +2027,17 @@ body.has-played .preplay-only { display: none; }
     grid-template-columns: repeat(4, 1fr);
     grid-template-rows: repeat(4, 1fr);
   }
-  .scorecard-cell .cell-rank { font-size: 1rem; }
+  .scorecard-cell .cell-rank { font-size: 1.2rem; }
+  .scorecard-cell .cell-of { font-size: 0.82rem; }
   .scorecard-cell .cell-index { font-size: 0.6rem; }
+  .scorecard-cell.final .cell-rank { font-size: 1.15rem; }
   .scorecard-hint {
     display: none; /* save vertical space on phones */
   }
 }
 @media (max-width: 420px) {
   .scorecard-grid { gap: 4px; }
-  .scorecard-cell .cell-rank { font-size: 0.9rem; }
+  .scorecard-cell .cell-rank { font-size: 1.05rem; }
+  .scorecard-cell .cell-of { font-size: 0.75rem; }
+  .scorecard-cell.final .cell-rank { font-size: 1rem; }
 }
