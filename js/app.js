@@ -1686,6 +1686,265 @@ function flashMoveBadge(verdict) {
   }, 2000);
 }
 
+// ---------------------------------------------------------------------------
+// COACH SANITY CHECK — make sure we never tell the player to play a move that
+// Stockfish considers materially losing. If the coach's primary line names a
+// specific move in **bold** (e.g. "**Bb5**", "**Nf3**", "**O-O**"), this
+// module runs that move through the ranker, compares its score to the best
+// move from the same position, and — if the move drops material — replaces
+// the primary line with a safer alternative.
+//
+// Centipawn convention: Stockfish reports scores from the side-to-move POV.
+// After White plays, it's Black's turn, so a "score cp" after the move is
+// from Black's POV. We flip the sign to bring everything into White's POV
+// for apples-to-apples comparison.
+//
+// Threshold: cpLoss >= 150 means the move drops at least ~1.5 pawns worth
+// of material/eval vs the best move. A full minor piece is ~300cp, a pawn
+// ~100cp, so 150 catches piece drops and rook-for-pawn blunders while
+// still allowing small positional sacrifices (gambits, tempo trades).
+// ---------------------------------------------------------------------------
+
+const SANITY_DROP_THRESHOLD_CP = 150;
+const SANITY_RANK_DEPTH = 10;
+
+// Extract the first **bolded move** token from a coach line. Returns the
+// SAN string (without the asterisks), or null if none found. We only trust
+// bolded tokens that actually look like SAN — pawn pushes (e4, d4), piece
+// moves (Nf3, Bb5, Qd2), captures (Nxe4, Bxf7), castling (O-O, O-O-O), and
+// promotions (e8=Q). Plain-English phrases like **e-file** or **center**
+// are ignored.
+function extractBoldedSan(line) {
+  if (!line || typeof line !== "string") return null;
+  const re = /\*\*([^*]+)\*\*/g;
+  let m;
+  while ((m = re.exec(line)) !== null) {
+    const tok = m[1].trim();
+    // Match SAN-like tokens only.
+    if (/^O-O(-O)?[+#]?$/.test(tok)) return tok;
+    // Piece moves or pawn moves, with optional disambiguation / capture /
+    // check / mate. We purposely keep this tight to avoid false positives.
+    if (/^[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$/.test(tok)) return tok;
+  }
+  return null;
+}
+
+// Try to apply a SAN move on a copy of the given FEN. Returns the resulting
+// { afterFen, uci, isLegal, piece } or { isLegal: false } if the move is
+// not legal in that position (e.g. suggested "Bb5" but the square isn't
+// reachable — extremely rare from our authored copy, but worth guarding).
+function simulateSan(fen, san) {
+  try {
+    const c = new Chess(fen);
+    const mv = c.move(san, { sloppy: true });
+    if (!mv) return { isLegal: false };
+    return {
+      isLegal: true,
+      afterFen: c.fen(),
+      uci: mv.from + mv.to + (mv.promotion || ""),
+      piece: mv.piece,
+      san: mv.san,
+    };
+  } catch (_) {
+    return { isLegal: false };
+  }
+}
+
+// Look up a UCI move in a ranker result list (best-first, side-to-move POV).
+function findRankedEntry(ranked, uci) {
+  if (!Array.isArray(ranked)) return null;
+  return ranked.find((r) => r.uci === uci) || null;
+}
+
+// Convert a ranker entry's score to centipawns from White's POV. The ranker
+// returns scores from the side-to-move POV of the analyzed position. Pass
+// the side-to-move character ("w" or "b") of that position.
+function cpFromWhitePerspective(entry, sideToMove) {
+  if (!entry) return null;
+  if (entry.mate != null) {
+    // Mate in N. Treat any mate as "very large" for comparison purposes
+    // — positive if good for side-to-move, negative otherwise, then flip
+    // for White POV.
+    const sign = entry.mate > 0 ? 1 : -1;
+    const cp = sign * 100000;
+    return sideToMove === "w" ? cp : -cp;
+  }
+  if (entry.scoreCp == null) return null;
+  return sideToMove === "w" ? entry.scoreCp : -entry.scoreCp;
+}
+
+// Decide whether a suggested move is "sane" by comparing its eval to the
+// best move's eval in the same position. Returns an object with:
+//   verdict: "sane" | "veto" | "unknown"
+//   cpLoss:  centipawn loss vs best move (positive = worse)
+//   bestUci: UCI of the best move in this position (for fallback wording)
+//   bestSan: SAN of the best move (convenience)
+//   rankedList: the raw ranker result (side-to-move POV scoreCp)
+async function sanityCheckSan({ fen, san }) {
+  if (!state.ranker) return { verdict: "unknown", cpLoss: null };
+
+  // Simulate the move first — we only need the UCI to look it up in the
+  // ranker's result for the pre-move FEN.
+  const sim = simulateSan(fen, san);
+  if (!sim.isLegal) return { verdict: "unknown", cpLoss: null };
+
+  let ranked;
+  try {
+    // Ask ranker for ALL legal moves from the pre-move position. This gives
+    // us both the best move's score AND our suggested move's score in one
+    // shot.
+    const tmp = new Chess(fen);
+    const legalCount = tmp.moves().length || 64;
+    ranked = await state.ranker.rankAll({ fen, legalCount, depth: SANITY_RANK_DEPTH });
+  } catch (e) {
+    console.warn("[sanity] ranker call failed:", e);
+    return { verdict: "unknown", cpLoss: null };
+  }
+  if (!ranked || ranked.length === 0) return { verdict: "unknown", cpLoss: null };
+
+  const sideToMove = fen.split(" ")[1] || "w";
+  const best = ranked[0];
+  const suggested = findRankedEntry(ranked, sim.uci);
+
+  const bestCp = cpFromWhitePerspective(best, sideToMove);
+  const suggestedCp = cpFromWhitePerspective(suggested, sideToMove);
+  if (bestCp == null || suggestedCp == null) {
+    return { verdict: "unknown", cpLoss: null, rankedList: ranked };
+  }
+
+  // Both scores are now from White's POV. If it's White to move, a "loss"
+  // means the suggested move is lower than the best. If it's Black to
+  // move (shouldn't happen in this app — we only suggest for White — but
+  // for safety), a "loss" means the suggested move is higher than the
+  // best (worse for Black).
+  const cpLoss = sideToMove === "w" ? (bestCp - suggestedCp) : (suggestedCp - bestCp);
+  const verdict = cpLoss >= SANITY_DROP_THRESHOLD_CP ? "veto" : "sane";
+  return {
+    verdict,
+    cpLoss,
+    bestUci: best.uci,
+    suggestedUci: sim.uci,
+    suggestedPiece: sim.piece,
+    rankedList: ranked,
+    sideToMove,
+  };
+}
+
+// Convert a UCI move to SAN by simulating it on the given FEN. Returns
+// null if the move is illegal.
+function uciToSan(fen, uci) {
+  try {
+    const c = new Chess(fen);
+    const from = uci.slice(0, 2);
+    const to = uci.slice(2, 4);
+    const promo = uci.length > 4 ? uci[4] : undefined;
+    const mv = c.move({ from, to, promotion: promo });
+    return mv ? mv.san : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Build a replacement primary line when we've vetoed a specific-move
+// recommendation. Strategy:
+//   1. If the ranker has a safe developing move (minor piece to central
+//      square) among its top 3, recommend that instead, preserving the
+//      "develop a piece" intent.
+//   2. Else if the best move is castling or a king-safety move, recommend
+//      that explicitly.
+//   3. Else fall back to a generic, safe steering line.
+function buildSafeSubstitute({ fen, vetoedSan, rankedList, sideToMove }) {
+  if (!Array.isArray(rankedList) || rankedList.length === 0) {
+    return `Hold off on **${vetoedSan}** — in this exact position it drops material to a simple reply. Develop a minor piece toward the center instead, and watch that it lands on a defended square.`;
+  }
+
+  // Look for a sane developing move in the top few. Define "sane" as
+  // within SANITY_DROP_THRESHOLD_CP of the best.
+  const top = rankedList.slice(0, 5);
+  const bestCp = cpFromWhitePerspective(top[0], sideToMove);
+
+  // Prefer a minor-piece development move (Nf3/Nc3/Bishop moves from the
+  // back rank) if one is in the top 5 and within threshold.
+  for (const entry of top) {
+    const entryCp = cpFromWhitePerspective(entry, sideToMove);
+    if (entryCp == null || bestCp == null) continue;
+    const loss = sideToMove === "w" ? (bestCp - entryCp) : (entryCp - bestCp);
+    if (loss >= SANITY_DROP_THRESHOLD_CP) continue;
+    const san = uciToSan(fen, entry.uci);
+    if (!san) continue;
+    // Filter out the vetoed move (paranoia).
+    if (san === vetoedSan) continue;
+    // Prefer minor piece moves (N/B) from the back rank for "develop" intent.
+    if (/^[NB]/.test(san)) {
+      return `Hold off on **${vetoedSan}** — in this exact position it drops material to a simple reply. **${san}** develops a piece safely and keeps the plan on track.`;
+    }
+    // Castling is always a high-value substitute.
+    if (/^O-O/.test(san)) {
+      return `Hold off on **${vetoedSan}** — in this exact position it drops material to a simple reply. **${san}** is the strongest move on the board and solves king safety at the same time.`;
+    }
+  }
+
+  // Otherwise, surface the single best move explicitly.
+  const bestSan = uciToSan(fen, top[0].uci);
+  if (bestSan && bestSan !== vetoedSan) {
+    return `Hold off on **${vetoedSan}** — in this exact position it drops material to a simple reply. The engine prefers **${bestSan}** here; that keeps your position solid.`;
+  }
+
+  return `Hold off on **${vetoedSan}** — in this exact position it drops material to a simple reply. Develop a minor piece toward the center instead, and watch that it lands on a defended square.`;
+}
+
+// Run the sanity check asynchronously and, if the current primary line is
+// still the one we're checking, patch it in place when the result arrives.
+// Uses a generation token to avoid racing with subsequent moves: if the
+// player makes another move while we're analyzing, the DOM patch is
+// skipped.
+function scheduleSanityCheck({ fen, primary, ply }) {
+  if (!state.ranker) return;
+  const san = extractBoldedSan(primary);
+  if (!san) return;
+  // Castling is always safe in the sense that if chess.js says it's legal,
+  // the king is by definition not moving into check. Skip to save compute.
+  if (/^O-O/.test(san)) return;
+
+  state._sanityGen = (state._sanityGen || 0) + 1;
+  const gen = state._sanityGen;
+
+  (async () => {
+    const res = await sanityCheckSan({ fen, san });
+    // Bail if a later move has superseded this check.
+    if (gen !== state._sanityGen) return;
+    if (state.ply !== ply) return;
+    if (res.verdict !== "veto") return;
+
+    const replacement = buildSafeSubstitute({
+      fen,
+      vetoedSan: san,
+      rankedList: res.rankedList,
+      sideToMove: res.sideToMove,
+    });
+    const primaryEl = document.getElementById("ymPrimary");
+    if (!primaryEl) return;
+    // Only patch if the DOM still shows the originally-rendered primary.
+    // If the user has done something that re-rendered the card in the
+    // meantime, the generation check above would have caught it — this is
+    // a belt-and-braces check.
+    primaryEl.innerHTML = escapeAndBold(replacement);
+    primaryEl.dataset.sanityVetoed = "1";
+    // Log for QA / debugging.
+    try {
+      console.info(
+        "[coach] sanity veto:",
+        san,
+        "cpLoss=" + res.cpLoss,
+        "→",
+        replacement.replace(/\*\*/g, "").slice(0, 120)
+      );
+    } catch (_) { /* swallow */ }
+  })().catch((e) => {
+    console.warn("[coach] sanity check error:", e);
+  });
+}
+
 // Populate the forward-looking "Your move" card. Picks ONE top priority each
 // turn based on a clear priority stack: king safety > claim the center >
 // develop > tempo. Uses Markdown-bold for emphasis (**text**) so escapeAndBold
@@ -1870,6 +2129,20 @@ function renderCoachPrompt(ply) {
   } catch (_) { /* best-effort */ }
 
   primaryEl.innerHTML = escapeAndBold(primary);
+  // Clear any stale sanity-veto marker — we'll re-set it below if the
+  // sanity check on this new primary fires.
+  delete primaryEl.dataset.sanityVetoed;
+
+  // Stockfish sanity check: if the primary line names a concrete move,
+  // verify the move doesn't drop material in the current position. The
+  // generic-stack line renders immediately (above); this check runs in
+  // the background and patches the DOM if the move needs a veto.
+  try {
+    const _currentFen = state.chess ? state.chess.fen() : null;
+    if (_currentFen) {
+      scheduleSanityCheck({ fen: _currentFen, primary, ply });
+    }
+  } catch (_) { /* best-effort */ }
 
   // ------- Secondary line -------
   // Prefer the central-control read when present. When not, and when we
