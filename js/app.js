@@ -58,6 +58,8 @@ import {
   SECOND_MOVE_OPENING_FALLBACK,
   SECOND_MOVE_FALLBACK,
 } from "../data/secondMoveAdvice.js";
+import { getQueensideBishopAdvice } from "../data/queensideBishopAdvice.js";
+import { getKingsideBishopAdvice } from "../data/kingsideBishopAdvice.js";
 import { buildOpponentOpeningNote } from "./identifyBlackOpening.js";
 
 const MAX_PLIES = 30; // 15 full moves
@@ -604,6 +606,14 @@ async function startGame(openingId) {
 
   state.openingId = openingId;
   state.opening = opening;
+
+  // Persist the student's chosen opening so it's remembered across visits.
+  // The whole point of studying one opening at a time is focused repetition —
+  // the app should remember which opening the player is working on until they
+  // actively decide to switch.
+  try {
+    localStorage.setItem("f15m_opening", openingId);
+  } catch (_) { /* localStorage unavailable */ }
   state.chess = new Chess();
   state.ply = 0;
   state.history = [];
@@ -1189,6 +1199,49 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
     const openingFallback = (openingId && SECOND_MOVE_OPENING_FALLBACK[openingId]) || null;
     const curated = exact || replyFallback || openingFallback || SECOND_MOVE_FALLBACK;
     if (curated) effectTxt = curated;
+  }
+
+  // Queenside-bishop override: whenever White moves the c1 bishop in the
+  // first ~15 plies, we swap in an opening-aware, destination-aware coaching
+  // line from data/queensideBishopAdvice.js. Players typically only move this
+  // bishop 1-2 times in a 15-move session, so each move is a big teaching
+  // moment. We intentionally run AFTER the ply-1 and ply-3 curated overrides
+  // above (those get priority when they apply — the c1 bishop can't move on
+  // ply 1 and rarely moves on ply 3, so the conflict is essentially theoretical).
+  if (moveObj && moveObj.piece === "b" && moveObj.from === "c1") {
+    const openingId = state.opening && state.opening.id;
+    const prevSan = (state.history || [])
+      .slice(0, -1) // history already includes this move; drop it
+      .map((h) => h.san)
+      .filter(Boolean);
+    const qbLine = getQueensideBishopAdvice({
+      moveObj,
+      openingId,
+      historySan: prevSan,
+      ply,
+    });
+    if (qbLine) effectTxt = qbLine;
+  }
+
+  // Kingside-bishop override: whenever White moves the f1 bishop in the first
+  // ~15 plies, swap in an opening-aware, destination-aware coaching line from
+  // data/kingsideBishopAdvice.js. The f1 bishop is the aggressive half of
+  // White's bishop pair — Bc4 defines the Italian, Bb5 defines the Ruy, Bg2
+  // defines the English, Bd3 is the London's support bishop. Every f1-bishop
+  // move carries opening-identity weight, so this is a key teaching moment.
+  if (moveObj && moveObj.piece === "b" && moveObj.from === "f1") {
+    const openingId = state.opening && state.opening.id;
+    const prevSan = (state.history || [])
+      .slice(0, -1) // history already includes this move; drop it
+      .map((h) => h.san)
+      .filter(Boolean);
+    const kbLine = getKingsideBishopAdvice({
+      moveObj,
+      openingId,
+      historySan: prevSan,
+      ply,
+    });
+    if (kbLine) effectTxt = kbLine;
   }
 
   // One-time teaching line on the first "book" move: emphasize that book is
@@ -2410,6 +2463,13 @@ const btnThreats = document.getElementById("btnOverlayThreats");
 if (btnCenter) btnCenter.addEventListener("click", () => toggleOverlay("center"));
 if (btnThreats) btnThreats.addEventListener("click", () => toggleOverlay("threats"));
 
-// Kick things off: auto-start with the default opening so the board is live on load
+// Kick things off: auto-start with the default opening so the board is live on load.
+// If the student previously chose an opening, restore it — studying one opening
+// is a multi-session activity, and the app should remember where they left off.
 renderOpeningCards();
-startGame(DEFAULT_OPENING_ID);
+let _bootOpeningId = DEFAULT_OPENING_ID;
+try {
+  const saved = localStorage.getItem("f15m_opening");
+  if (saved && OPENINGS[saved]) _bootOpeningId = saved;
+} catch (_) { /* localStorage unavailable */ }
+startGame(_bootOpeningId);
