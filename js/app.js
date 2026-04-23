@@ -16,6 +16,11 @@
 import { Chess } from "../vendor/chess.js";
 import { Chessboard, COLOR, INPUT_EVENT_TYPE, BORDER_TYPE } from "../vendor/cm-chessboard/src/Chessboard.js";
 import { MARKER_TYPE, Markers } from "../vendor/cm-chessboard/src/extensions/markers/Markers.js";
+
+// Custom marker slices for board overlays
+const MARKER_CENTER = { class: "marker-square-center", slice: "markerSquare" };
+const MARKER_THREAT = { class: "marker-square-threat", slice: "markerSquare" };
+const CENTER_SQUARES = ["d4", "d5", "e4", "e5"];
 import { PromotionDialog } from "../vendor/cm-chessboard/src/extensions/promotion-dialog/PromotionDialog.js";
 
 import { OPENINGS } from "../data/openings.js";
@@ -69,6 +74,9 @@ const state = {
   lastPlayerCritique: null,
   positiveConceptCounts: {},
   negativeConceptCounts: {},
+  selectedHistoryPly: null,
+  overlayCenter: false,
+  overlayThreats: false,
 };
 
 // ---------- Panels ----------
@@ -92,6 +100,14 @@ function showPanel(name) {
 }
 
 // ---------- Opening picker ----------
+function difficultyClass(label) {
+  if (!label) return "";
+  const l = label.toLowerCase();
+  if (l.startsWith("beginner")) return "diff-beginner";
+  if (l.startsWith("intermediate")) return "diff-intermediate";
+  return "";
+}
+
 function renderOpeningCards() {
   const container = document.getElementById("openingCards");
   container.innerHTML = "";
@@ -100,16 +116,18 @@ function renderOpeningCards() {
     btn.className = "opening-card";
     if (opening.id === state.openingId) btn.classList.add("is-current");
     btn.type = "button";
+    const diffClass = difficultyClass(opening.difficulty);
     btn.innerHTML = `
       <div class="opening-card-header">
         <span class="opening-card-name">${opening.name}</span>
         <span class="opening-card-eco">${opening.eco}</span>
       </div>
+      ${opening.difficulty ? `<span class="opening-card-difficulty ${diffClass}">${opening.difficulty}</span>` : ""}
+      ${opening.tagline ? `<p class="opening-card-tagline">${opening.tagline}</p>` : ""}
       <p class="opening-card-desc">${opening.intro}</p>
     `;
     btn.addEventListener("click", () => {
       startGame(opening.id);
-      // Scroll back to hero so player sees the fresh board
       document.getElementById("landing").scrollIntoView({ behavior: "smooth", block: "start" });
       panels.openings.hidden = true;
     });
@@ -166,9 +184,20 @@ async function startGame(openingId) {
   // Reset UI
   updatePhaseChip(0);
   document.getElementById("btnUndo").disabled = true;
-  document.getElementById("historyList").innerHTML = "";
+  const histEl = document.getElementById("historyAnnotated");
+  if (histEl) histEl.innerHTML = "";
+  const histHint = document.getElementById("historyHint");
+  if (histHint) histHint.hidden = true;
+  state.selectedHistoryPly = null;
   resetCoachPanel();
   renderOpeningCards(); // refresh the "is-current" highlight
+
+  // Starting a fresh game is pre-play again for marketing copy until first move
+  document.body.classList.remove("has-played");
+
+  // Re-apply any active overlays on the fresh board
+  if (state.overlayCenter) applyCenterOverlay();
+  if (state.overlayThreats) applyThreatOverlay();
 
   // Boot the engine if not already
   if (!state.engine) {
@@ -194,6 +223,8 @@ function resetCoachPanel() {
     "Make a move when you're ready. I'll tell you what it does, what it costs, and what to watch for next.";
   document.getElementById("coachMeta").hidden = true;
   document.getElementById("coachConcepts").innerHTML = "";
+  const alts = document.getElementById("coachAlternatives");
+  if (alts) alts.hidden = true;
 }
 
 function setCoachStatus(text) {
@@ -315,8 +346,14 @@ async function commitStudentMove(moveSpec) {
   });
   state.evalHistory.push(evalAfter);
 
-  renderCoach(verdict);
+  // Mark body as has-played so landing-only copy hides
+  document.body.classList.add("has-played");
+
+  renderCoach(verdict, alternatives);
+  flashMoveBadge(verdict, moveObj.to);
   renderHistory();
+  if (state.overlayThreats) applyThreatOverlay();
+  if (state.overlayCenter) applyCenterOverlay();
 
   if (state.chess.isGameOver() || state.ply >= MAX_PLIES) {
     endSession();
@@ -419,10 +456,59 @@ async function computerReply() {
 
   updatePhaseChip(state.ply);
   renderHistory();
+  if (state.overlayThreats) applyThreatOverlay();
+  if (state.overlayCenter) applyCenterOverlay();
 
   if (state.chess.isGameOver() || state.ply >= MAX_PLIES) {
     endSession();
   }
+}
+
+function renderConceptsScorecard(studentMoves) {
+  const container = document.getElementById("conceptsScorecard");
+  if (!container) return;
+  const items = container.querySelectorAll("li[data-concept]");
+  const pos = state.positiveConceptCounts;
+  const neg = state.negativeConceptCounts;
+
+  items.forEach((li) => {
+    const tag = li.getAttribute("data-concept");
+    const mark = li.querySelector(".scorecard-mark");
+    if (!mark) return;
+
+    mark.classList.remove("mark-good", "mark-warn", "mark-miss");
+
+    const p = pos[tag] || 0;
+    const n = neg[tag] || 0;
+
+    // Special case: "piece-twice" / "piece economy" only has a negative polarity.
+    // If no negatives recorded AND the player developed things, call it a win.
+    if (tag === "piece-twice") {
+      if (n === 0 && studentMoves.length >= 6) {
+        mark.textContent = "✓";
+        mark.classList.add("mark-good");
+      } else if (n > 0) {
+        mark.textContent = "!";
+        mark.classList.add("mark-miss");
+      } else {
+        mark.textContent = "—";
+      }
+      return;
+    }
+
+    if (p > 0 && n === 0) {
+      mark.textContent = "✓";
+      mark.classList.add("mark-good");
+    } else if (p > 0 && n > 0 && p >= n) {
+      mark.textContent = "✓";
+      mark.classList.add("mark-warn");
+    } else if (n > 0) {
+      mark.textContent = "!";
+      mark.classList.add("mark-miss");
+    } else {
+      mark.textContent = "—";
+    }
+  });
 }
 
 function extractEvalFromWhitesPOV(info, sideToMoveNext) {
@@ -446,9 +532,8 @@ function updatePhaseChip(ply) {
   stageEl.textContent = phase.label;
 }
 
-function renderCoach(verdict) {
+function renderCoach(verdict, alternatives) {
   const msgEl = document.getElementById("coachMessage");
-  // Parse **bold** markers in the message for subtle emphasis on recommended moves
   msgEl.innerHTML = escapeAndBold(verdict.message);
 
   const meta = document.getElementById("coachMeta");
@@ -475,6 +560,93 @@ function renderCoach(verdict) {
     if (c.polarity === "negative") li.classList.add("concept-negative");
     conceptsEl.appendChild(li);
   });
+
+  // Alternatives ("other ideas at this moment") — from the opening tree
+  renderAlternatives(verdict, alternatives);
+}
+
+function renderAlternatives(verdict, alternatives) {
+  const container = document.getElementById("coachAlternatives");
+  const list = document.getElementById("altsList");
+  if (!container || !list) return;
+
+  list.innerHTML = "";
+  const alts = Array.isArray(alternatives) ? alternatives : [];
+
+  // Build the shown set: include the mainline if the player deviated, plus any tree alts.
+  const shown = [];
+  if (!verdict.isMainline && verdict.recommended) {
+    shown.push({
+      san: verdict.recommended,
+      label: "mainline",
+      why: "The main line here — sets up the standard plan for this opening.",
+    });
+  }
+  alts.forEach((a) => {
+    if (a.san && a.san !== verdict.recommended) shown.push(a);
+  });
+
+  // Cap to 3 so the panel doesn't balloon
+  const limited = shown.slice(0, 3);
+  if (limited.length === 0) {
+    container.hidden = true;
+    return;
+  }
+
+  limited.forEach((alt) => {
+    const li = document.createElement("li");
+    const tagClass = "alt-tag-" + (alt.label === "mainline" ? "playable" : (alt.label || "playable"));
+    const tagText = alt.label === "mainline"
+      ? "Main line"
+      : (alt.label ? alt.label[0].toUpperCase() + alt.label.slice(1) : "Playable");
+    li.innerHTML =
+      `<span class="alt-san">${escapeHtml(alt.san)}</span>` +
+      `<span class="alt-tag ${tagClass}">${escapeHtml(tagText)}</span>` +
+      (alt.why ? escapeAndBold(alt.why) : "");
+    list.appendChild(li);
+  });
+  container.hidden = false;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// ---------- On-board flash badge ----------
+const CLASS_FLASH_LABEL = {
+  book: "Book",
+  good: "Good",
+  playable: "Playable",
+  inaccuracy: "Inaccuracy",
+  mistake: "Mistake",
+  blunder: "Blunder",
+};
+
+function flashMoveBadge(verdict) {
+  const el = document.getElementById("moveFlash");
+  const label = document.getElementById("moveFlashLabel");
+  if (!el || !label) return;
+  const cls = verdict.classification || "book";
+  label.textContent = CLASS_FLASH_LABEL[cls] || verdict.label || "Played";
+
+  // Clear previous state classes
+  el.classList.remove(
+    "flash-book", "flash-good", "flash-playable",
+    "flash-inaccuracy", "flash-mistake", "flash-blunder"
+  );
+  el.classList.add("flash-" + cls);
+
+  // Show, then hide after ~1.1s
+  el.hidden = false;
+  // Force a reflow to restart the transition if called rapidly
+  void el.offsetWidth;
+  if (el._flashTimer) clearTimeout(el._flashTimer);
+  el._flashTimer = setTimeout(() => {
+    el.hidden = true;
+  }, 1150);
 }
 
 function escapeAndBold(text) {
@@ -486,32 +658,110 @@ function escapeAndBold(text) {
   return esc.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
+// ---------- Annotated move log ----------
 function renderHistory() {
-  const list = document.getElementById("historyList");
+  const list = document.getElementById("historyAnnotated");
+  if (!list) return;
   list.innerHTML = "";
+
   const maxMove = Math.ceil(state.ply / 2);
+  const hasAnyStudentMove = state.history.some((h) => h.byStudent);
+  const hintEl = document.getElementById("historyHint");
+  if (hintEl) hintEl.hidden = !hasAnyStudentMove;
+
   for (let i = 0; i < maxMove; i++) {
     const white = state.history[i * 2];
     const black = state.history[i * 2 + 1];
-    const num = document.createElement("li");
-    num.className = "num";
-    num.textContent = `${i + 1}.`;
-    const w = document.createElement("li");
-    w.className = "w";
-    if (white) {
-      w.textContent = white.san;
-      if (white.critique && ["mistake", "blunder", "inaccuracy"].includes(white.critique.classification)) {
-        w.classList.add("issue");
-      }
+
+    const row = document.createElement("li");
+    row.className = "history-row";
+    const cls = white?.critique?.classification;
+    if (cls) row.classList.add("row-" + cls);
+    if (state.selectedHistoryPly === (i * 2 + 1)) row.classList.add("is-selected");
+
+    const tagHtml = white?.critique
+      ? `<span class="tiny-badge">${escapeHtml(white.critique.label || cls || "")}</span>`
+      : "";
+
+    const whiteHtml = white
+      ? `<span class="ply ply-white"><span class="ply-san">${escapeHtml(white.san)}</span>${tagHtml}</span>`
+      : `<span class="ply ply-white"></span>`;
+    const blackHtml = black
+      ? `<span class="ply ply-black"><span class="ply-san">${escapeHtml(black.san)}</span></span>`
+      : `<span class="ply ply-black"></span>`;
+
+    row.innerHTML =
+      `<span class="row-num">${i + 1}.</span>` +
+      whiteHtml + blackHtml;
+
+    // Expandable note if there's a critique
+    if (white?.critique?.message) {
+      const note = document.createElement("div");
+      note.className = "history-note";
+      note.hidden = state.selectedHistoryPly !== (i * 2 + 1);
+      note.innerHTML = escapeAndBold(white.critique.message);
+      row.appendChild(note);
+
+      row.addEventListener("click", () => {
+        const targetPly = i * 2 + 1;
+        state.selectedHistoryPly = state.selectedHistoryPly === targetPly ? null : targetPly;
+        renderHistory();
+      });
     }
-    const b = document.createElement("li");
-    b.className = "b";
-    if (black) b.textContent = black.san;
-    list.appendChild(num);
-    list.appendChild(w);
-    list.appendChild(b);
+
+    list.appendChild(row);
   }
   document.getElementById("btnUndo").disabled = state.history.length === 0;
+}
+
+// ---------- Board overlays ----------
+function clearOverlay(markerDef) {
+  if (!state.board) return;
+  try { state.board.removeMarkers(markerDef); } catch (_) { /* noop */ }
+}
+
+function applyCenterOverlay() {
+  if (!state.board) return;
+  clearOverlay(MARKER_CENTER);
+  if (!state.overlayCenter) return;
+  CENTER_SQUARES.forEach((sq) => state.board.addMarker(MARKER_CENTER, sq));
+}
+
+function applyThreatOverlay() {
+  if (!state.board) return;
+  clearOverlay(MARKER_THREAT);
+  if (!state.overlayThreats) return;
+
+  // Compute all squares Black can capture on. We do this by asking chess.js for
+  // Black's legal captures in the current position (regardless of whose turn it is).
+  const fen = state.chess.fen();
+  const parts = fen.split(" ");
+  if (parts.length < 6) return;
+  parts[1] = "b"; // force black-to-move so we can enumerate its attacks
+  parts[3] = "-"; // invalidate en-passant
+  const probeFen = parts.join(" ");
+
+  let probe;
+  try {
+    probe = new Chess(probeFen);
+  } catch (e) {
+    return;
+  }
+  const captures = probe.moves({ verbose: true }).filter((m) => m.flags.includes("c") || m.flags.includes("e"));
+  const targets = Array.from(new Set(captures.map((m) => m.to)));
+  targets.forEach((sq) => state.board.addMarker(MARKER_THREAT, sq));
+}
+
+function toggleOverlay(which) {
+  if (which === "center") {
+    state.overlayCenter = !state.overlayCenter;
+    document.getElementById("btnOverlayCenter").setAttribute("aria-pressed", String(state.overlayCenter));
+    applyCenterOverlay();
+  } else if (which === "threats") {
+    state.overlayThreats = !state.overlayThreats;
+    document.getElementById("btnOverlayThreats").setAttribute("aria-pressed", String(state.overlayThreats));
+    applyThreatOverlay();
+  }
 }
 
 // ---------- Summary with the three-question recap ----------
@@ -541,6 +791,9 @@ function endSession() {
   document.getElementById("qGood").innerHTML = buildGoodSummary(studentMoves);
   document.getElementById("qDrift").innerHTML = buildDriftSummary(studentMoves);
   document.getElementById("qLesson").innerHTML = buildLessonSummary(studentMoves);
+
+  // ---------- Concepts scorecard (four principles) ----------
+  renderConceptsScorecard(studentMoves);
 
   // Per-move notes (all slips)
   const notes = document.getElementById("summaryNotes");
@@ -740,6 +993,12 @@ document.getElementById("btnPlayAgain").addEventListener("click", () => startGam
 document.getElementById("btnNewOpening").addEventListener("click", () => showPanel("openings"));
 document.getElementById("btnSwitch").addEventListener("click", () => showPanel("openings"));
 document.getElementById("btnPickOpening").addEventListener("click", () => showPanel("openings"));
+
+// Overlay toggles
+const btnCenter = document.getElementById("btnOverlayCenter");
+const btnThreats = document.getElementById("btnOverlayThreats");
+if (btnCenter) btnCenter.addEventListener("click", () => toggleOverlay("center"));
+if (btnThreats) btnThreats.addEventListener("click", () => toggleOverlay("threats"));
 
 // Primary CTA: if a session is in progress, focus the board; otherwise start fresh
 document.getElementById("btnStartLesson").addEventListener("click", () => {

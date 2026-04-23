@@ -793,3 +793,341 @@ em { font-style: italic; color: var(--ink-900); }
 .cm-chessboard .board .coordinate   { fill: var(--ink-500); }
 .cm-chessboard .markers .marker-square-dot circle,
 .cm-chessboard .markers .marker-dot circle { fill: var(--sage-700); opacity: 0.55; }
+
+/* ---------- Round 2 upgrades ---------- */
+
+/* "For now — White only" roadmap note */
+.hero-roadmap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 0.8rem;
+  color: var(--ink-500);
+  margin: 0 0 var(--space-5);
+  max-width: 36ch;
+  line-height: 1.5;
+}
+.roadmap-tag {
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sage-700);
+  background: var(--sage-100);
+  padding: 2px 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+/* Board wrap (so the move-flash can be absolutely positioned) */
+.board-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+/* Floating move-score badge that flashes over the board */
+.move-flash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.82);
+  padding: var(--space-3) var(--space-5);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+  color: #fff;
+  background: var(--sage-700);
+  box-shadow: 0 8px 30px rgba(42, 38, 35, 0.22);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  z-index: 10;
+}
+.move-flash:not([hidden]) {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.move-flash.flash-book { background: var(--sage-700); }
+.move-flash.flash-good { background: var(--sage-500); }
+.move-flash.flash-playable { background: #7a8b81; }
+.move-flash.flash-inaccuracy { background: var(--gold-500); color: #3d2f10; }
+.move-flash.flash-mistake { background: var(--clay-500); }
+.move-flash.flash-blunder { background: #8a3d1f; }
+
+/* Board overlay toolbar (small, unobtrusive) */
+.overlay-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  flex-wrap: wrap;
+}
+.overlay-label {
+  font-size: 0.72rem;
+  color: var(--ink-500);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.overlay-btn {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--ink-700);
+  background: transparent;
+  border: 1px solid var(--cream-300);
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.overlay-btn:hover { border-color: var(--sage-700); }
+.overlay-btn[aria-pressed="true"] {
+  background: var(--sage-700);
+  border-color: var(--sage-700);
+  color: #fff;
+}
+
+/* Center-control overlay uses the marker-square slot with a sage tint.
+   cm-chessboard renders markers as <use href="#markerSquare">, so target
+   the <use> element directly — fill/opacity cascade into the referenced rect. */
+.cm-chessboard .markers use.marker-square-center {
+  fill: var(--sage-500);
+  opacity: 0.32;
+}
+/* Threat overlay uses a clay tint */
+.cm-chessboard .markers use.marker-square-threat {
+  fill: var(--clay-500);
+  opacity: 0.28;
+}
+
+/* Annotated move log */
+.history-annotated {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.history-row {
+  display: grid;
+  grid-template-columns: 2.2rem 1fr 1fr;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  font-size: 0.88rem;
+}
+.history-row:hover,
+.history-row.is-selected {
+  background: var(--cream-100);
+  border-color: var(--cream-300);
+}
+.history-row .row-num {
+  font-family: var(--font-display);
+  color: var(--ink-500);
+  font-size: 0.82rem;
+}
+.history-row .ply {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.history-row .ply-san {
+  font-weight: 600;
+  color: var(--ink-900);
+}
+.history-row.black-issue .ply-san,
+.history-row.row-book .ply-san { color: var(--ink-900); }
+.history-row.row-good { border-left-color: var(--sage-500); }
+.history-row.row-book { border-left-color: var(--sage-700); }
+.history-row.row-playable { border-left-color: var(--cream-300); }
+.history-row.row-inaccuracy { border-left-color: var(--gold-500); }
+.history-row.row-mistake { border-left-color: var(--clay-500); }
+.history-row.row-blunder { border-left-color: #8a3d1f; }
+.history-row .tiny-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--cream-200);
+  color: var(--ink-700);
+  flex-shrink: 0;
+}
+.history-row.row-book  .tiny-badge { background: var(--sage-100); color: var(--sage-900); }
+.history-row.row-good  .tiny-badge { background: var(--sage-100); color: var(--sage-900); }
+.history-row.row-inaccuracy .tiny-badge { background: var(--gold-100); color: #8a6a1e; }
+.history-row.row-mistake .tiny-badge { background: var(--clay-100); color: #8a3d1f; }
+.history-row.row-blunder .tiny-badge { background: #f0d0c4; color: #7c2e16; }
+.history-note {
+  grid-column: 1 / -1;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--ink-700);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--cream-300);
+}
+.history-note[hidden] { display: none; }
+.history-hint {
+  font-size: 0.72rem;
+  color: var(--ink-500);
+  margin: 0;
+  padding-left: var(--space-3);
+}
+
+/* "Other ideas" alternatives block under the coach message */
+.coach-alternatives {
+  border-top: 1px dashed var(--cream-300);
+  padding-top: var(--space-3);
+  margin-top: var(--space-2);
+}
+.coach-alternatives[hidden] { display: none; }
+.alts-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  margin: 0 0 var(--space-2);
+}
+.alts-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.alts-list li {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ink-700);
+}
+.alts-list .alt-san {
+  font-weight: 600;
+  color: var(--ink-900);
+  margin-right: var(--space-2);
+}
+.alts-list .alt-tag {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-right: var(--space-2);
+  background: var(--cream-200);
+  color: var(--ink-700);
+}
+.alts-list .alt-tag-playable { background: var(--sage-100); color: var(--sage-900); }
+.alts-list .alt-tag-inaccuracy { background: var(--gold-100); color: #8a6a1e; }
+.alts-list .alt-tag-mistake { background: var(--clay-100); color: #8a3d1f; }
+
+/* Concepts scorecard in the summary */
+.concepts-scorecard {
+  margin: var(--space-5) 0;
+  padding: var(--space-4);
+  background: var(--cream-100);
+  border-radius: var(--radius-md);
+}
+.scorecard-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  margin: 0 0 var(--space-3);
+}
+.scorecard-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+.scorecard-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 0.9rem;
+  color: var(--ink-700);
+}
+.scorecard-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.9rem;
+  background: var(--cream-200);
+  color: var(--ink-500);
+  flex-shrink: 0;
+}
+.scorecard-mark.mark-good { background: var(--sage-100); color: var(--sage-900); }
+.scorecard-mark.mark-warn { background: var(--gold-100); color: #8a6a1e; }
+.scorecard-mark.mark-miss { background: var(--clay-100); color: #8a3d1f; }
+.scorecard-name { font-weight: 500; }
+
+/* Opening card tagline + difficulty */
+.opening-card-tagline {
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink-700);
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+}
+.opening-card-difficulty {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--cream-200);
+  color: var(--ink-700);
+  margin-bottom: var(--space-3);
+}
+.opening-card-difficulty.diff-beginner { background: var(--sage-100); color: var(--sage-900); }
+.opening-card-difficulty.diff-intermediate { background: var(--gold-100); color: #8a6a1e; }
+
+/* Hide preplay-only content once the user has made a move */
+body.has-played .preplay-only { display: none; }
+
+/* ---------- Mobile: coach above board, comfortable board width ---------- */
+@media (max-width: 860px) {
+  .hero {
+    grid-template-areas:
+      "copy"
+      "coach"
+      "board";
+  }
+  .board-wrap { width: min(85vw, 480px); margin: 0 auto; }
+  .overlay-toolbar { justify-content: center; }
+  .hero-board { width: 100%; }
+  .coach-panel {
+    border-left: 0;
+    border-top: 2px solid var(--sage-700);
+    padding: var(--space-4) 0 var(--space-4);
+  }
+  .history-annotated { font-size: 0.92rem; }
+  .history-row { padding: var(--space-3); }
+}

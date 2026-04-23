@@ -65,6 +65,10 @@
             <span class="trust-dot" aria-hidden="true"></span>
             <span>Powered by Stockfish · plain-English coaching · no memorization</span>
           </p>
+          <p class="hero-roadmap">
+            <span class="roadmap-tag">For now</span>
+            You play the White pieces. Black-side lessons are next.
+          </p>
 
           <ul class="hero-stages" aria-label="The four stages of an opening">
             <li><span class="stage-num">1–4</span><span class="stage-label">Claim the center</span></li>
@@ -87,7 +91,20 @@
             </div>
           </div>
 
-          <div id="board" class="board"></div>
+          <div class="board-wrap">
+            <div id="board" class="board"></div>
+            <!-- Floating move-score badge that flashes after each move -->
+            <div class="move-flash" id="moveFlash" hidden>
+              <span class="move-flash-label" id="moveFlashLabel">Book</span>
+            </div>
+          </div>
+
+          <!-- Overlay toolbar: off by default, teach-as-you-play -->
+          <div class="overlay-toolbar" aria-label="Board overlays">
+            <span class="overlay-label">Show:</span>
+            <button class="overlay-btn" id="btnOverlayCenter" type="button" aria-pressed="false">Center control</button>
+            <button class="overlay-btn" id="btnOverlayThreats" type="button" aria-pressed="false">Threats</button>
+          </div>
 
           <div class="hero-board-footer">
             <div class="board-actions">
@@ -127,7 +144,14 @@
 
           <div class="move-history">
             <h3 class="history-title">Moves so far</h3>
-            <ol class="history-list" id="historyList"></ol>
+            <ol class="history-annotated" id="historyAnnotated"></ol>
+            <p class="history-hint" id="historyHint" hidden>Tap any move to review the coach note.</p>
+          </div>
+
+          <!-- 'Other ideas at this moment' — revealed when alternatives exist -->
+          <div class="coach-alternatives" id="coachAlternatives" hidden>
+            <p class="alts-label">Other ideas at this moment</p>
+            <ul class="alts-list" id="altsList"></ul>
           </div>
         </aside>
       </section>
@@ -180,6 +204,17 @@
           </div>
         </div>
 
+        <!-- Concepts scorecard: the four principles, with a ✓ / — / ! mark -->
+        <div class="concepts-scorecard" id="conceptsScorecard">
+          <p class="scorecard-label">Principles this session</p>
+          <ul class="scorecard-list">
+            <li data-concept="center"><span class="scorecard-mark">—</span><span class="scorecard-name">Center control</span></li>
+            <li data-concept="development"><span class="scorecard-mark">—</span><span class="scorecard-name">Development</span></li>
+            <li data-concept="king-safety"><span class="scorecard-mark">—</span><span class="scorecard-name">King safety</span></li>
+            <li data-concept="piece-twice"><span class="scorecard-mark">—</span><span class="scorecard-name">Piece economy</span></li>
+          </ul>
+        </div>
+
         <div class="summary-notes" id="summaryNotes"></div>
 
         <div class="summary-actions">
@@ -188,8 +223,8 @@
         </div>
       </section>
 
-      <!-- How it works -->
-      <section id="how" class="panel how">
+      <!-- How it works (hidden once the user starts playing) -->
+      <section id="how" class="panel how preplay-only">
         <div class="section-head">
           <p class="eyebrow">How it works</p>
           <h2>Five moves, five things to notice.</h2>
@@ -233,8 +268,8 @@
         </ol>
       </section>
 
-      <!-- Closing note -->
-      <section class="panel about">
+      <!-- Closing note (hidden once the user starts playing) -->
+      <section class="panel about preplay-only" id="aboutSection">
         <p class="about-lede">
           A good opening won't win every game, but a bad opening makes every game harder. Most players don't lose the opening because they failed to memorize — they lose it because they didn't understand what each early move was <em>for</em>.
         </p>

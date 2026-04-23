@@ -19,6 +19,8 @@ export const OPENINGS = {
     name: "Italian Game",
     eco: "C50",
     side: "white", // who the student plays
+    tagline: "The most natural opening. A perfect starting point.",
+    difficulty: "Beginner-friendly",
     intro:
       "The Italian Game is one of the oldest and friendliest openings. It teaches classical ideas: control the center, develop knights before bishops, aim the light-squared bishop at the weak f7 square, and castle quickly.",
     principles: [
@@ -67,6 +69,8 @@ export const OPENINGS = {
     name: "Queen's Gambit Declined",
     eco: "D30",
     side: "white",
+    tagline: "A bold pawn offer. Great for positional thinkers.",
+    difficulty: "Intermediate",
     intro:
       "The Queen's Gambit is a classical opening where White offers a pawn to gain central control. The Declined is Black's most solid response. You'll learn about pawn structure, piece coordination, and the slow squeeze of classical play.",
     principles: [
@@ -100,6 +104,8 @@ export const OPENINGS = {
     name: "London System",
     eco: "D02",
     side: "white",
+    tagline: "A calm, repeatable setup. The same plan against almost anything.",
+    difficulty: "Beginner-friendly",
     intro:
       "The London System is a beginner-friendly, 'system' opening — White plays the same setup against almost anything. It's perfect for learning opening principles without memorizing long theory. The bishop on f4 and pawns on c3 and d4 give you a rock-solid foundation.",
     principles: [
