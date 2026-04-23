@@ -850,6 +850,11 @@ async function commitStudentMove(moveSpec) {
   const fenBeforeMove = state.chess.fen();
   const legalBefore = state.chess.moves();
   state._lastLegalCount = legalBefore.length;
+  // Persist so renderAlternatives() can filter suggestions by legality in
+  // the pre-move position — the opening-tree alternatives are indexed by
+  // mainline ply, which can disagree with the real position after the
+  // student has diverged from the mainline.
+  state._lastFenBeforeMove = fenBeforeMove;
 
   // Snapshot assist flags BEFORE clearing them. If either was set during
   // this turn, the resulting move is "assisted" and won't be awarded a medal.
@@ -1525,8 +1530,13 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
   const ladder = document.getElementById("hintLadder");
   if (ladder) ladder.hidden = true;
 
-  // Alternatives ("other ideas at this moment") — from the opening tree
-  renderAlternatives(verdict, alternatives);
+  // Alternatives ("other ideas at this moment") — from the opening tree.
+  // We pass the pre-move FEN so the renderer can filter out any suggestion
+  // that's no longer legal in the actual position (e.g. the tree says "O-O
+  // was the mainline here" but the student already castled two turns ago,
+  // so castling is no longer a legal move). A coach that recommends an
+  // illegal move is confidence-destroying; this keeps suggestions honest.
+  renderAlternatives(verdict, alternatives, state._lastFenBeforeMove || null);
 }
 
 // Render a signed rubric score: +2, +1, 0, -1, -2
@@ -1595,7 +1605,7 @@ function sanToPlainEnglish(san) {
   return `${piece} ${verb} ${dest}${promo}`;
 }
 
-function renderAlternatives(verdict, alternatives) {
+function renderAlternatives(verdict, alternatives, fenBeforeMove) {
   const container = document.getElementById("coachAlternatives");
   const list = document.getElementById("altsList");
   if (!container || !list) return;
@@ -1616,6 +1626,26 @@ function renderAlternatives(verdict, alternatives) {
   alts.forEach((a) => {
     if (a.san && a.san !== verdict.recommended) shown.push(a);
   });
+
+  // LEGALITY FILTER — every "what else you could have played" item must
+  // actually have been a legal move in the position the student faced.
+  // The opening tree is indexed by ply in the MAINLINE sequence, so when
+  // the student diverges early (e.g. castles on move 4 instead of move 6),
+  // later suggestions can drift out of sync with the real position and
+  // recommend moves that are no longer legal (most famously O-O after
+  // having already castled). We catch that here.
+  if (fenBeforeMove) {
+    const filtered = [];
+    for (const alt of shown) {
+      try {
+        const probe = new Chess(fenBeforeMove);
+        const mv = probe.move(alt.san, { sloppy: true });
+        if (mv) filtered.push(alt);
+      } catch (_) { /* illegal — drop silently */ }
+    }
+    shown.length = 0;
+    shown.push(...filtered);
+  }
 
   // Cap to 3 so the panel doesn't balloon
   const limited = shown.slice(0, 3);
@@ -1893,6 +1923,138 @@ function buildSafeSubstitute({ fen, vetoedSan, rankedList, sideToMove }) {
   return `Hold off on **${vetoedSan}** — in this exact position it drops material to a simple reply. Develop a minor piece toward the center instead, and watch that it lands on a defended square.`;
 }
 
+// ---------------------------------------------------------------------------
+// CAPTURE COUNTERATTACK ANALYZER
+//
+// Every time Black's last move captured a White piece, the coach should take
+// a stance: counterattack the capturer, or hold off. The stance is informed
+// by Stockfish, not by rule-of-thumb heuristics. We ask the ranker for all
+// legal White moves from the current position, take the top 6 by score, and
+// check whether any of them lands on the square Black's capturing piece is
+// now sitting on. If YES — a counterattack/recapture is in the top 6 —
+// the coach counsels aggression. If NO — the engine prefers moves that
+// ignore the capturer — the coach counsels patience.
+// ---------------------------------------------------------------------------
+
+const COUNTERATTACK_TOP_N = 6;
+
+// Parse a SAN to extract its destination square. Returns a 2-char square or
+// null for castling / unparseable strings.
+function destSquareFromSan(san) {
+  if (!san) return null;
+  if (/^O-O/.test(san)) return null;
+  const bare = String(san).replace(/[+#!?]+$/g, "").replace(/=[QRBN]$/, "");
+  const m = bare.match(/([a-h][1-8])$/);
+  return m ? m[1] : null;
+}
+
+// Extract the destination square from a UCI move ("e2e4" → "e4").
+function destSquareFromUci(uci) {
+  if (!uci || uci.length < 4) return null;
+  return uci.slice(2, 4);
+}
+
+// Return the destination square of Black's last capturing move, if any.
+// The student's engine-reply history entry carries both a SAN and a UCI;
+// we prefer UCI because it's unambiguous.
+function lastBlackCaptureSquare(history) {
+  if (!Array.isArray(history) || history.length === 0) return null;
+  const last = history[history.length - 1];
+  if (!last || last.byStudent) return null;
+  const san = last.san || "";
+  if (!/x/.test(san)) return null;
+  return destSquareFromUci(last.uci) || destSquareFromSan(san);
+}
+
+// Async: given the current FEN and the square Black's capturer sits on,
+// decide whether a counterattack move is in Stockfish's top COUNTERATTACK_TOP_N
+// moves. Returns an object describing the coaching stance.
+async function analyzeCaptureResponse({ fen, captureSq }) {
+  if (!state.ranker || !captureSq) return { stance: "unknown" };
+  let ranked;
+  try {
+    const tmp = new Chess(fen);
+    const legalCount = tmp.moves().length || 64;
+    ranked = await state.ranker.rankAll({ fen, legalCount, depth: SANITY_RANK_DEPTH });
+  } catch (e) {
+    console.warn("[counterattack] ranker call failed:", e);
+    return { stance: "unknown" };
+  }
+  if (!ranked || ranked.length === 0) return { stance: "unknown" };
+
+  // Ranker returns MultiPV list sorted best-first. Take the top N.
+  const top = ranked.slice(0, COUNTERATTACK_TOP_N);
+
+  // Find counterattack moves: any top-N move whose destination equals
+  // the square Black's capturer is on (i.e. a move that captures that
+  // piece, regardless of which White piece does it).
+  const counters = [];
+  for (const entry of top) {
+    if (destSquareFromUci(entry.uci) === captureSq) {
+      const san = uciToSan(fen, entry.uci);
+      if (san) counters.push({ san, uci: entry.uci, rankIndex: top.indexOf(entry) });
+    }
+  }
+
+  // Best move overall (for the "hold off" wording we surface it by name).
+  const best = ranked[0];
+  const bestSan = uciToSan(fen, best.uci);
+
+  if (counters.length > 0) {
+    // Aggression. Name the strongest counterattack (lowest rankIndex).
+    counters.sort((a, b) => a.rankIndex - b.rankIndex);
+    return {
+      stance: "counterattack",
+      counterSan: counters[0].san,
+      rankPosition: counters[0].rankIndex + 1, // 1-based
+      topN: COUNTERATTACK_TOP_N,
+    };
+  }
+  return {
+    stance: "patience",
+    bestSan,
+    topN: COUNTERATTACK_TOP_N,
+  };
+}
+
+// Schedule the counterattack analysis and patch the Your Move primary
+// line in place when it resolves. Uses the same generation-token pattern
+// as the sanity check so that in-flight analysis can't overwrite the
+// card once the player has moved on.
+function scheduleCounterattackCoaching({ fen, lastBlackSan, captureSq, ply }) {
+  if (!state.ranker || !captureSq) return;
+
+  state._counterGen = (state._counterGen || 0) + 1;
+  const gen = state._counterGen;
+
+  (async () => {
+    const res = await analyzeCaptureResponse({ fen, captureSq });
+    if (gen !== state._counterGen) return;
+    if (state.ply !== ply) return;
+    if (res.stance === "unknown") return;
+
+    const primaryEl = document.getElementById("ymPrimary");
+    if (!primaryEl) return;
+    // Don't overwrite a sanity-veto that already fired — a veto means the
+    // current DOM carries a safety-critical message about a different move.
+    if (primaryEl.dataset.sanityVetoed === "1") return;
+
+    let line;
+    if (res.stance === "counterattack") {
+      line = `Black just captured with **${lastBlackSan}** \u2014 and the engine likes hitting back. **${res.counterSan}** is among the top ${res.topN} moves here, so this is a moment for aggression: strike the piece that just took yours.`;
+    } else {
+      line = `Black just captured with **${lastBlackSan}** \u2014 but don't rush to recapture on autopilot. The engine's top ${res.topN} moves all ignore the capturer; patience beats reflex here. Look for **${res.bestSan}** or another developing move that strengthens your position instead of walking into a trade Black invited.`;
+    }
+    primaryEl.innerHTML = escapeAndBold(line);
+    primaryEl.dataset.counterattackStance = res.stance;
+    try {
+      console.info("[coach] capture stance:", res.stance, "sq=" + captureSq);
+    } catch (_) { /* swallow */ }
+  })().catch((e) => {
+    console.warn("[coach] counterattack analysis error:", e);
+  });
+}
+
 // Run the sanity check asynchronously and, if the current primary line is
 // still the one we're checking, patch it in place when the result arrives.
 // Uses a generation token to avoid racing with subsequent moves: if the
@@ -2129,9 +2291,10 @@ function renderCoachPrompt(ply) {
   } catch (_) { /* best-effort */ }
 
   primaryEl.innerHTML = escapeAndBold(primary);
-  // Clear any stale sanity-veto marker — we'll re-set it below if the
-  // sanity check on this new primary fires.
+  // Clear any stale sanity-veto or counterattack-stance marker — we'll
+  // re-set them below if the relevant async check fires for this turn.
   delete primaryEl.dataset.sanityVetoed;
+  delete primaryEl.dataset.counterattackStance;
 
   // Stockfish sanity check: if the primary line names a concrete move,
   // verify the move doesn't drop material in the current position. The
@@ -2141,6 +2304,27 @@ function renderCoachPrompt(ply) {
     const _currentFen = state.chess ? state.chess.fen() : null;
     if (_currentFen) {
       scheduleSanityCheck({ fen: _currentFen, primary, ply });
+    }
+  } catch (_) { /* best-effort */ }
+
+  // Capture-response stance: if Black's last move was a capture, ask the
+  // ranker whether a counterattack on the capturer is in the top 6 moves.
+  // If so, coach aggression; otherwise, coach patience. Also async, also
+  // patches the DOM when it resolves — but defers to any sanity-veto that
+  // has already fired (veto carries safety-critical info we shouldn't
+  // overwrite).
+  try {
+    const _currentFen = state.chess ? state.chess.fen() : null;
+    const _captureSq = lastBlack && /x/.test(lastBlack.san)
+      ? (destSquareFromUci(lastBlack.uci) || destSquareFromSan(lastBlack.san))
+      : null;
+    if (_currentFen && _captureSq && lastBlack) {
+      scheduleCounterattackCoaching({
+        fen: _currentFen,
+        lastBlackSan: lastBlack.san,
+        captureSq: _captureSq,
+        ply,
+      });
     }
   } catch (_) { /* best-effort */ }
 

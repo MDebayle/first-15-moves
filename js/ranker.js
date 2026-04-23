@@ -25,6 +25,7 @@ export class Ranker {
     this._ready = false;
     this._readyPromise = null;
     this._pending = null;       // { resolve, reject, rows: Map<multipv, {scoreCp, mate, pv}> }
+    this._queue = [];           // FIFO of pending requests [{ fen, legalCount, depth, resolve, reject }]
     this._onReadyCb = null;
   }
 
@@ -109,25 +110,41 @@ export class Ranker {
   async rankAll({ fen, legalCount, depth = 10 }) {
     if (!this._ready) await this.start();
 
-    // If a previous request is still in flight, cancel it.
-    if (this._pending) {
-      try { this._send("stop"); } catch (_) {}
-      // Resolve the old one with an empty list so nothing hangs.
-      const old = this._pending;
-      this._pending = null;
-      old.resolve([]);
-      await new Promise((r) => setTimeout(r, 10));
-    }
+    // Serialize requests through a FIFO queue. A single Stockfish worker
+    // can only analyze one position at a time, so if we started a new
+    // analysis while another was in flight we would corrupt each other's
+    // info lines (and previously, we cancelled the prior one entirely,
+    // which caused the scorecard medal/rank to silently drop to empty
+    // whenever the sanity-check or counterattack analyzers fired on the
+    // same turn). Queueing keeps every request honest: each caller gets
+    // the full ranked list for the FEN it asked for.
+    return new Promise((resolve, reject) => {
+      this._queue.push({ fen, legalCount, depth, resolve, reject });
+      this._drainQueue();
+    });
+  }
 
+  _drainQueue() {
+    if (this._pending) return;           // another request in flight
+    const next = this._queue.shift();
+    if (!next) return;
+
+    const { fen, legalCount, depth, resolve, reject } = next;
     const n = Math.max(1, Math.min(500, legalCount || 1));
     this._send(`setoption name MultiPV value ${n}`);
     this._send("ucinewgame");
     this._send(`position fen ${fen}`);
 
-    return new Promise((resolve, reject) => {
-      this._pending = { resolve, reject, rows: new Map() };
-      this._send(`go depth ${depth}`);
-    });
+    // Wrap resolve/reject so the queue advances as soon as this one settles.
+    const settle = (fn, val) => {
+      try { fn(val); } finally { this._drainQueue(); }
+    };
+    this._pending = {
+      resolve: (val) => settle(resolve, val),
+      reject: (err) => settle(reject, err),
+      rows: new Map(),
+    };
+    this._send(`go depth ${depth}`);
   }
 }
 
