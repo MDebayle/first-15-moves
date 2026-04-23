@@ -883,7 +883,6 @@ async function computerReply() {
             state.evalHistory.push(evalAfter);
             updatePhaseChip(state.ply);
             renderHistory();
-            showBlackReplyNarration(moveObj, state.ply);
             return;
           }
         }
