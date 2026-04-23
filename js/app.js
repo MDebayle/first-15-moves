@@ -116,16 +116,58 @@ const panels = {
 };
 
 function showPanel(name) {
-  // "landing" is always visible (it's the hero). openings and summary toggle.
-  // When summary is shown, we hide the hero to focus on the recap.
+  // "landing" is always visible (it's the hero). Only the openings picker toggles now;
+  // the summary has been promoted to a modal dialog (see openSummaryModal).
   panels.openings.hidden = name !== "openings";
-  panels.summary.hidden = name !== "summary";
-  panels.landing.hidden = name === "summary"; // hero hides only when reviewing
+  panels.landing.hidden = false;
   if (name === "openings") {
     document.getElementById("openings").scrollIntoView({ behavior: "smooth", block: "start" });
   } else {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+}
+
+// ---------- Summary modal open/close ----------
+function openSummaryModal() {
+  const dlg = document.getElementById("summaryModal");
+  if (!dlg) return;
+  if (typeof dlg.showModal === "function" && !dlg.open) {
+    dlg.showModal();
+  } else if (!dlg.hasAttribute("open")) {
+    dlg.setAttribute("open", "");
+  }
+  const inner = dlg.querySelector(".help-inner");
+  if (inner) inner.scrollTop = 0;
+}
+
+// Close the summary modal. If the user closes without picking an action,
+// treat that as "continue this game with coach off" — the explicit default.
+function closeSummaryModal({ silent = false } = {}) {
+  const dlg = document.getElementById("summaryModal");
+  if (!dlg) return;
+  if (typeof dlg.close === "function" && dlg.open) dlg.close();
+  else dlg.removeAttribute("open");
+  if (!silent && state.sessionEnded && !state.coachOff) {
+    enterContinueMode();
+  }
+}
+
+// Continue the current game after the 15-move session is over.
+// Board stays interactive, Black keeps replying, but the coach goes quiet.
+function enterContinueMode() {
+  state.coachOff = true;
+  state.inputLocked = false;
+  document.body.classList.add("coach-off");
+  // Show a quiet status line in the coach panel
+  setCoachStatus("Coach off — free play.");
+  const narrEl = document.getElementById("coachNarrative");
+  if (narrEl) narrEl.hidden = true;
+  const promptEl = document.getElementById("coachPrompt");
+  if (promptEl) promptEl.hidden = true;
+  const altsEl = document.getElementById("coachAlternatives");
+  if (altsEl) altsEl.hidden = true;
+  const hintLadder = document.getElementById("hintLadder");
+  if (hintLadder) hintLadder.hidden = true;
 }
 
 // ---------- Opening picker ----------
@@ -180,11 +222,16 @@ async function startGame(openingId) {
   state.positiveConceptCounts = {};
   state.negativeConceptCounts = {};
   state.inputLocked = false;
+  state.sessionEnded = false;
+  state.coachOff = false; // set true when user chooses "Continue without coach"
 
   document.getElementById("openingEco").textContent = opening.eco;
   document.getElementById("openingTitle").textContent = opening.name;
 
-  panels.summary.hidden = true;
+  // Close the summary modal if it was left open from a prior session
+  closeSummaryModal({ silent: true });
+  document.body.classList.remove("coach-off");
+
   panels.landing.hidden = false;
   panels.openings.hidden = true;
 
@@ -401,24 +448,45 @@ async function commitStudentMove(moveSpec) {
   // Mark body as has-played so landing-only copy hides
   document.body.classList.add("has-played");
 
-  renderCoach(verdict, alternatives, moveObj, ply);
-  flashMoveBadge(verdict, moveObj.to);
+  // In continue mode, skip coach UI — just update history
+  if (!state.coachOff) {
+    renderCoach(verdict, alternatives, moveObj, ply);
+    flashMoveBadge(verdict, moveObj.to);
+  }
   renderHistory();
   if (state.overlayThreats) applyThreatOverlay();
   if (state.overlayCenter) applyCenterOverlay();
 
-  if (state.chess.isGameOver() || state.ply >= MAX_PLIES) {
+  // How many White moves has the student made? After White's Nth move, state.ply === 2N - 1.
+  const whitePliesPlayed = Math.ceil(state.ply / 2);
+  const shouldEndAfterBlackReply = !state.coachOff && whitePliesPlayed >= 15;
+
+  // Checkmate / stalemate mid-session: end immediately before Black could reply.
+  if (state.chess.isGameOver() && !state.coachOff) {
     endSession();
     return;
   }
 
   await computerReply();
 
+  // If the session ended during Black's reply (e.g. game-over), don't unlock input.
+  if (state.sessionEnded) return;
+
+  // White just completed move 15 and Black has now replied — fire the summary.
+  if (shouldEndAfterBlackReply) {
+    endSession();
+    return;
+  }
+
   // After Black replies, refresh the pre-move prompt with the new phase/situation
-  renderCoachPrompt(state.ply);
+  if (!state.coachOff) {
+    renderCoachPrompt(state.ply);
+    setCoachStatus("Your move.");
+  } else {
+    setCoachStatus("Coach off — free play.");
+  }
 
   state.inputLocked = false;
-  setCoachStatus("Your move.");
 }
 
 async function computerReply() {
@@ -517,7 +585,9 @@ async function computerReply() {
 
   showBlackReplyNarration(moveObj, state.ply);
 
-  if (state.chess.isGameOver() || state.ply >= MAX_PLIES) {
+  // The 15-move cap is now handled in commitStudentMove (fires after Black's
+  // reply to White's 15th). Here we only fire on actual game-over mid-session.
+  if (state.chess.isGameOver() && !state.coachOff) {
     endSession();
   }
 }
@@ -952,6 +1022,8 @@ function toggleOverlay(which) {
 
 // ---------- Summary with the three-question recap ----------
 function endSession() {
+  if (state.sessionEnded) return; // idempotent — never fire twice in one session
+  state.sessionEnded = true;
   state.inputLocked = true;
   setCoachStatus("Session complete.");
 
@@ -1021,7 +1093,7 @@ function endSession() {
   else if (accuracy >= 40) headline.textContent = "Good work — room to sharpen.";
   else headline.textContent = "Tough one. Every session teaches.";
 
-  showPanel("summary");
+  openSummaryModal();
 }
 
 function buildGoodSummary(studentMoves) {
@@ -1238,8 +1310,44 @@ function closeHintLadder() {
 document.getElementById("btnUndo").addEventListener("click", undoLast);
 document.getElementById("btnHint").addEventListener("click", showHint);
 document.getElementById("btnResign").addEventListener("click", endSession);
-document.getElementById("btnPlayAgain").addEventListener("click", () => startGame(state.openingId));
-document.getElementById("btnNewOpening").addEventListener("click", () => showPanel("openings"));
+document.getElementById("btnPlayAgain").addEventListener("click", () => {
+  closeSummaryModal({ silent: true });
+  startGame(state.openingId);
+});
+document.getElementById("btnNewOpening").addEventListener("click", () => {
+  closeSummaryModal({ silent: true });
+  showPanel("openings");
+});
+
+// --- Summary modal: continue button + any close-without-choosing path ---
+const summaryModalEl = document.getElementById("summaryModal");
+const btnContinueGameEl = document.getElementById("btnContinueGame");
+const btnSummaryCloseEl = document.getElementById("btnSummaryClose");
+if (btnContinueGameEl) {
+  btnContinueGameEl.addEventListener("click", () => {
+    closeSummaryModal({ silent: true });
+    enterContinueMode();
+  });
+}
+if (btnSummaryCloseEl) {
+  // X button in the modal header — closing without choosing defaults to continue-play
+  btnSummaryCloseEl.addEventListener("click", () => closeSummaryModal());
+}
+if (summaryModalEl) {
+  // Backdrop click — treat as close-without-choosing (defaults to continue-play)
+  summaryModalEl.addEventListener("click", (e) => {
+    if (e.target === summaryModalEl) closeSummaryModal();
+  });
+  // ESC / native cancel — same treatment
+  summaryModalEl.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    closeSummaryModal();
+  });
+  // Native close event (fires from any close path) — ensure continue mode engages
+  summaryModalEl.addEventListener("close", () => {
+    if (state.sessionEnded && !state.coachOff) enterContinueMode();
+  });
+}
 document.getElementById("btnSwitch").addEventListener("click", () => showPanel("openings"));
 const btnPickOpeningEl = document.getElementById("btnPickOpening");
 if (btnPickOpeningEl) btnPickOpeningEl.addEventListener("click", () => showPanel("openings"));

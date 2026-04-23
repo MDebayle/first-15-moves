@@ -335,11 +335,19 @@
         </div>
       </section>
 
-      <!-- Summary panel -->
-      <section id="summary" class="panel summary" hidden>
-        <p class="eyebrow">Session recap</p>
-        <h2 id="summaryHeadline">Session complete.</h2>
-        <p class="summary-opening" id="summaryOpening">—</p>
+      <!-- Summary modal — pops up the moment the 15th White move completes -->
+      <dialog class="help-modal summary-modal" id="summaryModal" aria-labelledby="summaryHeadline">
+        <article class="help-inner summary-inner">
+          <header class="help-header summary-header">
+            <div>
+              <p class="eyebrow summary-eyebrow">You finished 15 moves</p>
+              <h2 id="summaryHeadline">Session complete.</h2>
+              <p class="summary-opening" id="summaryOpening">—</p>
+            </div>
+            <button class="help-close" id="btnSummaryClose" type="button" aria-label="Close and keep playing">×</button>
+          </header>
+
+          <section class="help-section summary-body">
 
         <div class="summary-questions">
           <div class="qblock qblock-good">
@@ -389,12 +397,17 @@
         </div>
 
         <div class="summary-notes" id="summaryNotes"></div>
+          </section>
 
-        <div class="summary-actions">
-          <button class="btn-primary" id="btnPlayAgain" type="button">Play this opening again</button>
-          <button class="btn-ghost" id="btnNewOpening" type="button">Try a different opening</button>
-        </div>
-      </section>
+          <footer class="help-footer summary-footer">
+            <div class="summary-actions">
+              <button class="btn-primary" id="btnPlayAgain" type="button">Play this opening again</button>
+              <button class="btn-ghost" id="btnNewOpening" type="button">Try a different opening</button>
+              <button class="btn-ghost btn-continue" id="btnContinueGame" type="button">Continue this game (no coach)</button>
+            </div>
+          </footer>
+        </article>
+      </dialog>
 
     </main>
 
