@@ -18,9 +18,25 @@ import { Chessboard, COLOR, INPUT_EVENT_TYPE, BORDER_TYPE } from "../vendor/cm-c
 import { MARKER_TYPE, Markers } from "../vendor/cm-chessboard/src/extensions/markers/Markers.js";
 
 // Custom marker slices for board overlays
-const MARKER_CENTER = { class: "marker-square-center", slice: "markerSquare" };
 const MARKER_THREAT = { class: "marker-square-threat", slice: "markerSquare" };
-const CENTER_SQUARES = ["d4", "d5", "e4", "e5"];
+// The 16-square central zone the "Center control" overlay analyzes: the
+// 4×4 block from c3 to f6. These are the squares whose control decides most
+// opening positions.
+const CENTRAL_ZONE = (() => {
+  const files = ["c", "d", "e", "f"];
+  const ranks = [3, 4, 5, 6];
+  const out = [];
+  for (const f of files) for (const r of ranks) out.push(`${f}${r}`);
+  return out;
+})();
+// Per-tier marker definitions for the territory overlay. Tiers 1..5 on each
+// side map to progressively stronger blue (white-controlled) or red (black-
+// controlled) tints. Tier 0 (neutral / contested) uses no marker.
+const TERRITORY_MARKERS = {};
+for (let i = 1; i <= 5; i++) {
+  TERRITORY_MARKERS[`w${i}`] = { class: `marker-territory-w${i}`, slice: "markerSquare" };
+  TERRITORY_MARKERS[`b${i}`] = { class: `marker-territory-b${i}`, slice: "markerSquare" };
+}
 import { PromotionDialog } from "../vendor/cm-chessboard/src/extensions/promotion-dialog/PromotionDialog.js";
 
 import { OPENINGS } from "../data/openings.js";
@@ -30,12 +46,8 @@ import { CONFIG } from "./config.js";
 import { critique, CLASS, classToBadgeClass } from "./critique.js";
 import {
   computeRubric,
-  rubricLabel,
-  rubricClass,
-  computeAxes,
   computePlanFit,
   computeCost,
-  narrateBlackReply,
   buildHintLadder,
   buildTakeawayRule,
 } from "./coaching.js";
@@ -174,10 +186,10 @@ function enterContinueMode() {
   document.body.classList.add("coach-off");
   // Show a quiet status line in the coach panel
   setCoachStatus("Coach off — free play.");
-  const narrEl = document.getElementById("coachNarrative");
-  if (narrEl) narrEl.hidden = true;
-  const promptEl = document.getElementById("coachPrompt");
-  if (promptEl) promptEl.hidden = true;
+  const verdictCard = document.getElementById("verdictCard");
+  if (verdictCard) verdictCard.hidden = true;
+  const yourMoveCard = document.getElementById("yourMoveCard");
+  if (yourMoveCard) yourMoveCard.hidden = true;
   const altsEl = document.getElementById("coachAlternatives");
   if (altsEl) altsEl.hidden = true;
   const hintLadder = document.getElementById("hintLadder");
@@ -241,6 +253,24 @@ function rankToMedal(rank) {
 }
 
 // Fill a per-move cell (index 1..15) with rank info.
+// Small visual fanfare when a medal lands in the scorecard. Adds a transient
+// CSS class that drives a pop+glow+starburst animation — gold gets the full
+// treatment, silver/bronze get a subtler version. No sound.
+function flourishScorecardCell(whiteMoveIndex, medal) {
+  const grid = document.getElementById("scorecardGrid");
+  if (!grid) return;
+  const cell = grid.querySelector(`[data-cell="${whiteMoveIndex}"]`);
+  if (!cell) return;
+  const tier = medal ? `medal-arrive-${medal}` : "cell-arrive";
+  cell.classList.remove("cell-arrive", "medal-arrive-gold", "medal-arrive-silver", "medal-arrive-bronze");
+  // Force reflow so re-adding the class restarts the animation.
+  void cell.offsetWidth;
+  cell.classList.add(tier);
+  // Remove after the animation so repeated renders don't re-trigger it.
+  const ms = medal === "gold" ? 1400 : 900;
+  setTimeout(() => cell.classList.remove(tier), ms);
+}
+
 function paintScorecardCell(whiteMoveIndex, rank, total) {
   const grid = document.getElementById("scorecardGrid");
   if (!grid) return;
@@ -315,27 +345,6 @@ function ordinal(n) {
   return `${n}th`;
 }
 
-// Soft golf-clap audio. Lazy-loaded (HTMLAudioElement) and only played on gold medals.
-let _clapAudio = null;
-function playGoldClap() {
-  try {
-    if (!_clapAudio) {
-      _clapAudio = new Audio("./assets/golf-clap.mp3");
-      _clapAudio.preload = "auto";
-      _clapAudio.volume = 0.6;
-    }
-    // Allow retriggering if it's already mid-play.
-    _clapAudio.currentTime = 0;
-    const p = _clapAudio.play();
-    if (p && typeof p.catch === "function") {
-      // Autoplay can fail if the user hasn't interacted yet — swallow silently.
-      p.catch(() => {});
-    }
-  } catch (_) {
-    /* ignore */
-  }
-}
-
 // Kick off a non-blocking rank analysis for a move that was just played.
 // Updates the scorecard cell in place when the analysis returns. Does NOT
 // block the main critique/engine-reply pipeline.
@@ -375,9 +384,12 @@ async function analyzeMoveRank({ whiteMoveIndex, fenBefore, uciMove }) {
   // Persist
   state.moveRanks.push({ whiteMoveIndex, rank, total, medal: rankToMedal(rank) });
 
-  // Paint the cell and, if gold, play the cheer.
+  // Paint the cell with a small arrival flourish (stronger for gold).
   paintScorecardCell(whiteMoveIndex, rank, total);
-  if (rank === MEDAL_RANK_GOLD) playGoldClap();
+  flourishScorecardCell(whiteMoveIndex, rankToMedal(rank));
+
+  // Update the verdict card in-place (medal icon + "2nd best of 29" label)
+  try { renderVerdictRank(whiteMoveIndex); } catch (_) { /* best-effort */ }
 
   // Engine vs. plan reconciler. When the scorecard and the coach disagree
   // (medal-worthy rank but "Off plan"/"Drifts from plan"/"Abandons plan"
@@ -421,7 +433,7 @@ function maybeAppendEnginePlanNote({ whiteMoveIndex, rank }) {
   if (whiteMoveIndex !== latestWhiteIdx) return;
 
   // Don't double-append if the note is already there.
-  const msgEl = document.getElementById("coachMessage");
+  const msgEl = document.getElementById("verdictEffect");
   if (!msgEl || msgEl.dataset.planReconciled === "1") return;
 
   const openingName = (state.opening && state.opening.name) ? state.opening.name : "this opening";
@@ -440,7 +452,7 @@ function maybeAppendEnginePlanNote({ whiteMoveIndex, rank }) {
     `The medal means "engine-approved," while **${planLabel}** just means the move steps outside the ${openingName} plan you're learning. ` +
     `Both can be true at once.`;
 
-  // Append as a block span (coachMessage itself is a <p>, so nesting a <p>
+  // Append as a block span (verdictEffect is a <p>, so nesting a <p>
   // would trigger HTML auto-close; span avoids that). CSS styles it as block.
   const span = document.createElement("span");
   span.className = "coach-reconcile-note";
@@ -603,29 +615,31 @@ async function startGame(openingId) {
 }
 
 function resetCoachPanel() {
-  document.getElementById("coachMessage").textContent =
-    "Make a move when you're ready. I'll tell you what it does, what it costs, and what to watch for next.";
-  const meta = document.getElementById("coachMeta");
-  if (meta) meta.hidden = true;
-  // Show the pre-move prompt for the opening phase
+  // Hide the verdict card until the first move is played.
+  const card = document.getElementById("verdictCard");
+  if (card) card.hidden = true;
+  const effectEl = document.getElementById("verdictEffect");
+  if (effectEl) {
+    effectEl.textContent = "—";
+    delete effectEl.dataset.planReconciled;
+  }
+  const costEl = document.getElementById("verdictCost");
+  if (costEl) { costEl.textContent = ""; costEl.hidden = true; }
+  const axesLine = document.getElementById("verdictAxes");
+  if (axesLine) { axesLine.textContent = ""; axesLine.hidden = true; }
+  const medalEl = document.getElementById("verdictMedal");
+  if (medalEl) { medalEl.innerHTML = ""; medalEl.classList.add("verdict-medal-empty"); }
+  const sanEl = document.getElementById("verdictSan");
+  if (sanEl) sanEl.textContent = "—";
+  const rankEl = document.getElementById("verdictRank");
+  if (rankEl) { rankEl.textContent = "—"; rankEl.dataset.rankReady = "0"; }
+
+  // Reset the "your move" card to the opening prompt.
   renderCoachPrompt(0);
-  document.getElementById("coachConcepts").innerHTML = "";
+
   const alts = document.getElementById("coachAlternatives");
   if (alts) alts.hidden = true;
 
-  // Round 3: hide deep-feedback surfaces until a move is played
-  const axes = document.getElementById("coachAxes");
-  if (axes) axes.hidden = true;
-  const rubric = document.getElementById("rubric");
-  if (rubric) rubric.hidden = true;
-  const narr = document.getElementById("coachNarrative");
-  if (narr) narr.hidden = true;
-  const planRow = document.getElementById("narrPlanRow");
-  if (planRow) planRow.hidden = true;
-  const costRow = document.getElementById("narrCostRow");
-  if (costRow) costRow.hidden = true;
-  const blackRow = document.getElementById("narrBlackRow");
-  if (blackRow) blackRow.hidden = true;
   const ladder = document.getElementById("hintLadder");
   if (ladder) ladder.hidden = true;
   const steps = document.getElementById("hintSteps");
@@ -795,8 +809,11 @@ async function commitStudentMove(moveSpec) {
 
   await computerReply();
 
-  // If the session ended during Black's reply (e.g. game-over), don't unlock input.
-  if (state.sessionEnded) return;
+  // If the session ended during Black's reply (e.g. game-over) AND we're not
+  // in continue-mode, don't unlock input — the summary modal takes over. In
+  // continue-mode, sessionEnded stays true for the rest of the game, so we
+  // need to keep play flowing.
+  if (state.sessionEnded && !state.coachOff) return;
 
   // White just completed move 15 and Black has now replied — fire the summary.
   if (shouldEndAfterBlackReply) {
@@ -909,25 +926,11 @@ async function computerReply() {
   if (state.overlayThreats) applyThreatOverlay();
   if (state.overlayCenter) applyCenterOverlay();
 
-  showBlackReplyNarration(moveObj, state.ply);
-
   // The 15-move cap is now handled in commitStudentMove (fires after Black's
   // reply to White's 15th). Here we only fire on actual game-over mid-session.
   if (state.chess.isGameOver() && !state.coachOff) {
     endSession();
   }
-}
-
-function showBlackReplyNarration(blackMoveObj, ply) {
-  const narrEl = document.getElementById("coachNarrative");
-  const blackRow = document.getElementById("narrBlackRow");
-  const blackEl = document.getElementById("narrBlack");
-  if (!blackEl || !blackRow) return;
-  const line = narrateBlackReply(blackMoveObj, ply);
-  if (!line) return;
-  blackEl.textContent = line;
-  blackRow.hidden = false;
-  if (narrEl) narrEl.hidden = false;
 }
 
 function renderConceptsScorecard(studentMoves) {
@@ -999,110 +1002,123 @@ function updatePhaseChip(ply) {
 }
 
 function renderCoach(verdict, alternatives, moveObj, ply) {
-  const msgEl = document.getElementById("coachMessage");
-  let msg = verdict.message;
+  // -----------------------------------------------------------
+  // Section A — VERDICT card (what the played move did + cost)
+  // -----------------------------------------------------------
+  const card = document.getElementById("verdictCard");
+  const medalEl = document.getElementById("verdictMedal");
+  const sanEl = document.getElementById("verdictSan");
+  const rankEl = document.getElementById("verdictRank");
+  const effectEl = document.getElementById("verdictEffect");
+  const costEl = document.getElementById("verdictCost");
+  const axesLineEl = document.getElementById("verdictAxes");
+
+  // Find rank info for this move, if analysis has resolved already. Otherwise
+  // the async ranker will update the card by calling renderVerdictRank().
+  const whiteMoveIndex = Math.ceil(ply / 2);
+  const rankInfo = (state.moveRanks || []).find((r) => r.whiteMoveIndex === whiteMoveIndex);
+
+  // Medal slot — fills in when the ranker returns (see renderVerdictRank).
+  if (medalEl) {
+    if (rankInfo && rankInfo.medal && MEDAL_SVG[rankInfo.medal]) {
+      medalEl.innerHTML = MEDAL_SVG[rankInfo.medal];
+      medalEl.classList.remove("verdict-medal-empty");
+    } else {
+      medalEl.innerHTML = "";
+      medalEl.classList.add("verdict-medal-empty");
+    }
+  }
+
+  // SAN (played) + rank phrase
+  if (sanEl) sanEl.textContent = (moveObj && moveObj.san) || verdict.played || "—";
+  if (rankEl) {
+    if (rankInfo) {
+      rankEl.textContent = `${ordinal(rankInfo.rank)} best of ${rankInfo.total}`;
+    } else {
+      rankEl.textContent = "analyzing…";
+    }
+    rankEl.dataset.rankReady = rankInfo ? "1" : "0";
+  }
+
+  // --- Effect: ONE sentence on what the move does ---
+  const rubric = computeRubric(verdict, moveObj, ply);
+  let effectTxt = computePlanFit(verdict, moveObj, ply, rubric) || verdict.message || "";
 
   // One-time teaching line on the first "book" move: emphasize that book is
   // a theory fact, not a virtue — natural moves often stumble into it.
   if (verdict.classification === "book") {
     try {
       if (!localStorage.getItem("f15m_book_taught")) {
-        msg += " **Theory isn't a test you passed** \u2014 it's a label for moves that match established opening lines. Natural, principled moves often match theory without any memorization.";
+        effectTxt += " **Theory isn't a test you passed** \u2014 it's a label for moves that match established opening lines. Natural, principled moves often match theory without any memorization.";
         localStorage.setItem("f15m_book_taught", "1");
       }
     } catch (_) { /* localStorage unavailable */ }
   }
+  if (effectEl) {
+    effectEl.innerHTML = escapeAndBold(effectTxt || "—");
+    delete effectEl.dataset.planReconciled;
+  }
 
-  msgEl.innerHTML = escapeAndBold(msg);
-  // Reset the plan-reconcile flag: a new coach message is on screen, so any
-  // note left over from a prior move has just been wiped. Allow the async
-  // ranker to append a fresh note for this move when it resolves.
-  delete msgEl.dataset.planReconciled;
+  // --- Cost: ONE sentence on what the move costs (hidden if none) ---
+  const costTxt = computeCost(verdict, moveObj, ply, rubric);
+  if (costEl) {
+    if (costTxt) {
+      costEl.innerHTML = escapeAndBold(costTxt);
+      costEl.hidden = false;
+    } else {
+      costEl.textContent = "";
+      costEl.hidden = true;
+    }
+  }
 
-  // Hide the pre-move prompt while the post-move verdict is visible
-  const promptEl = document.getElementById("coachPrompt");
-  if (promptEl) promptEl.hidden = true;
+  // --- Inline axes line: "Center +2 · Development 0 · King safety 0 · Tempo +1" ---
+  if (axesLineEl) {
+    const parts = [
+      `Center ${signed(rubric.center)}`,
+      `Development ${signed(rubric.development)}`,
+      `King safety ${signed(rubric["king-safety"])}`,
+      `Tempo ${signed(rubric.tempo)}`,
+    ];
+    axesLineEl.textContent = parts.join(" · ");
+    axesLineEl.hidden = false;
+  }
+
+  if (card) card.hidden = false;
 
   // Close any open hint ladder when a move is played
   const ladder = document.getElementById("hintLadder");
   if (ladder) ladder.hidden = true;
 
-  // Legacy single-badge meta row — keep hidden in R3 (replaced by axes + rubric)
-  const meta = document.getElementById("coachMeta");
-  if (meta) meta.hidden = true;
-
-  // --- Axes: Theory + Quality chips ---
-  const axesEl = document.getElementById("coachAxes");
-  const axes = computeAxes(verdict);
-  const axTheory = document.getElementById("axisTheory");
-  const axQuality = document.getElementById("axisQuality");
-  if (axTheory && axQuality && axesEl) {
-    axTheory.textContent = axes.theory;
-    axTheory.className = "axis-value " + axes.theoryCls;
-    axQuality.textContent = axes.quality;
-    axQuality.className = "axis-value " + axes.qualityCls;
-    axesEl.hidden = false;
-  }
-
-  // --- Rubric: 4 pills ---
-  const rubric = computeRubric(verdict, moveObj, ply);
-  const rubEl = document.getElementById("rubric");
-  const rubMap = [
-    ["rubCenter", rubric.center],
-    ["rubDevelopment", rubric.development],
-    ["rubKingSafety", rubric["king-safety"]],
-    ["rubTempo", rubric.tempo],
-  ];
-  for (const [id, score] of rubMap) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-    el.textContent = rubricLabel(score);
-    el.className = "rubric-score " + rubricClass(score);
-  }
-  if (rubEl) rubEl.hidden = false;
-
-  // --- Narrative: Plan fit + Cost (Black's reply populated later in computerReply) ---
-  const planTxt = computePlanFit(verdict, moveObj, ply, rubric);
-  const costTxt = computeCost(verdict, moveObj, ply, rubric);
-  const narrEl = document.getElementById("coachNarrative");
-  const planRow = document.getElementById("narrPlanRow");
-  const planEl = document.getElementById("narrPlan");
-  const costRow = document.getElementById("narrCostRow");
-  const costEl = document.getElementById("narrCost");
-  const blackRow = document.getElementById("narrBlackRow");
-  const blackEl = document.getElementById("narrBlack");
-
-  if (planEl && planRow) {
-    if (planTxt) { planEl.innerHTML = escapeAndBold(planTxt); planRow.hidden = false; }
-    else { planRow.hidden = true; }
-  }
-  if (costEl && costRow) {
-    if (costTxt) { costEl.innerHTML = escapeAndBold(costTxt); costRow.hidden = false; }
-    else { costRow.hidden = true; }
-  }
-  // Reset Black's reply row — will be filled after engine responds
-  if (blackRow && blackEl) {
-    blackEl.textContent = "…";
-    blackRow.hidden = true;
-  }
-  if (narrEl) {
-    narrEl.hidden = !(planTxt || costTxt);
-  }
-
-  // --- Concepts row ---
-  const conceptsEl = document.getElementById("coachConcepts");
-  conceptsEl.innerHTML = "";
-  (verdict.concepts || []).forEach((c) => {
-    const li = document.createElement("li");
-    const label = CONCEPT_LABELS[c.tag] || c.tag.replace(/-/g, " ");
-    const sign = c.polarity === "negative" ? "− " : "+ ";
-    li.textContent = sign + label;
-    if (c.polarity === "negative") li.classList.add("concept-negative");
-    conceptsEl.appendChild(li);
-  });
-
   // Alternatives ("other ideas at this moment") — from the opening tree
   renderAlternatives(verdict, alternatives);
+}
+
+// Render a signed rubric score: +2, +1, 0, -1, -2
+function signed(n) {
+  if (n > 0) return `+${n}`;
+  if (n < 0) return `${n}`;
+  return "0";
+}
+
+// Called by the async ranker when a move's rank finally resolves. Keeps the
+// verdict card's medal + "2nd best of 29" string in sync.
+function renderVerdictRank(whiteMoveIndex) {
+  const latestWhiteIdx = Math.ceil(state.ply / 2);
+  if (whiteMoveIndex !== latestWhiteIdx) return; // stale
+  const info = (state.moveRanks || []).find((r) => r.whiteMoveIndex === whiteMoveIndex);
+  if (!info) return;
+  const medalEl = document.getElementById("verdictMedal");
+  const rankEl = document.getElementById("verdictRank");
+  if (medalEl) {
+    if (info.medal && MEDAL_SVG[info.medal]) {
+      medalEl.innerHTML = MEDAL_SVG[info.medal];
+      medalEl.classList.remove("verdict-medal-empty");
+    }
+  }
+  if (rankEl) {
+    rankEl.textContent = `${ordinal(info.rank)} best of ${info.total}`;
+    rankEl.dataset.rankReady = "1";
+  }
 }
 
 // Turn a SAN string into a plain-English move phrase. Beginners can't always
@@ -1234,50 +1250,118 @@ function flashMoveBadge(verdict) {
   }, 2000);
 }
 
-// Render the pre-move prompt above coach-message: phase goal + situational concern.
-// Called at session start, after every computer reply, and on reset.
+// Populate the forward-looking "Your move" card. Picks ONE top priority each
+// turn based on a clear priority stack: king safety > claim the center >
+// develop > tempo. Uses Markdown-bold for emphasis (**text**) so escapeAndBold
+// renders it safely — never raw <strong> tags, which get HTML-escaped.
 function renderCoachPrompt(ply) {
-  const promptEl = document.getElementById("coachPrompt");
-  const goalEl = document.getElementById("promptGoal");
-  const watchEl = document.getElementById("promptWatch");
-  if (!promptEl || !goalEl || !watchEl) return;
+  const cardEl = document.getElementById("yourMoveCard");
+  const primaryEl = document.getElementById("ymPrimary");
+  const secondaryEl = document.getElementById("ymSecondary");
+  if (!cardEl || !primaryEl || !secondaryEl) return;
 
-  // Next-move ply is current ply + 1 (ply increments before this is called)
+  // Next-move ply is current ply + 1 (ply already reflects the just-played move)
   const nextPly = ply + 1;
-  const phase = PHASES.find((p) => nextPly >= p.minPly && nextPly <= p.maxPly) || PHASES[0];
 
-  // Derive a situational watch line based on board state
-  let watch = phase.watch;
+  // Collect position snapshot for the priority decision
+  let hasCastled = false;
+  let lastBlack = null;
+  let whiteCentralPawns = 0;
   try {
-    if (state.chess && state.history && state.history.length > 0) {
-      const hasCastled = state.history.some(
+    if (state.chess && state.history) {
+      hasCastled = state.history.some(
         (h) => h.byStudent && (h.san === "O-O" || h.san === "O-O-O")
       );
       const last = state.history[state.history.length - 1];
-      if (!hasCastled && nextPly >= 9) {
-        watch = "Your king is still in the center. Castling soon is the highest-priority move.";
-      } else if (last && !last.byStudent && last.san) {
-        // After a Black reply, hint at reading the move
-        const san = last.san;
-        if (/x/.test(san)) {
-          watch = `Black just captured with <strong>${san}</strong>. Recapture only if the trade serves your plan.`;
-        } else if (/\+$/.test(san)) {
-          watch = `Black checked with <strong>${san}</strong>. Resolve the check, then return to the plan.`;
-        } else if (/^[NBRQ]/.test(san) && nextPly <= 8) {
-          watch = `Black developed with <strong>${san}</strong>. Answer development with development \u2014 don't chase.`;
+      if (last && !last.byStudent) lastBlack = last;
+      const board = state.chess.board();
+      for (let r = 0; r < 8; r++) {
+        for (let f = 0; f < 8; f++) {
+          const sq = board[r][f];
+          if (!sq || sq.color !== "w" || sq.type !== "p") continue;
+          const file = "abcdefgh"[f];
+          const rank = 8 - r;
+          if ((file === "d" || file === "e") && rank >= 4) whiteCentralPawns += 1;
         }
       }
     }
-  } catch (_) { /* fall back to phase.watch */ }
+  } catch (_) { /* best-effort */ }
 
-  goalEl.textContent = phase.goal;
-  if (watch) {
-    watchEl.innerHTML = escapeAndBold(watch);
-    watchEl.hidden = false;
+  // Central control read — used for both the priority decision and the
+  // secondary line.
+  let cc = null;
+  try { cc = computeCentralControlScore(); } catch (_) { /* swallow */ }
+
+  // ------- Priority stack -------
+  // 1) Respond to a check (always)
+  // 2) King safety: castle in phase 5+ if not yet castled
+  // 3) Recapture or settle a tactical shock
+  // 4) Claim / contest the center when it's weak
+  // 5) Develop a piece when minor pieces are still home
+  // 6) Plan-phase: coordinate toward the middlegame
+  let primary = null;
+
+  if (lastBlack && /\+$/.test(lastBlack.san)) {
+    primary = `Black's **${lastBlack.san}** puts you in check. Deal with the check first, then return to the plan.`;
+  } else if (!hasCastled && nextPly >= 9) {
+    primary = "Your king is still in the center. **Castling** is the single highest-priority move this turn.";
+  } else if (lastBlack && /x/.test(lastBlack.san)) {
+    primary = `Black just captured with **${lastBlack.san}**. Recapture only if the trade serves your plan \u2014 don't recapture on autopilot.`;
+  } else if (nextPly <= 8 && whiteCentralPawns === 0) {
+    primary = "Stake the center first. A pawn to **e4** or **d4** claims ground before you develop pieces around it.";
+  } else if (cc && cc.net <= -3) {
+    primary = `Black is dominating the center (**${signed(cc.net)}**). Contest it immediately before it locks in \u2014 look for a central pawn push or a piece that challenges the key squares.`;
+  } else if (nextPly <= 8) {
+    primary = "Keep the center solid and develop a minor piece toward it. Every move should do at least two jobs at once.";
+  } else if (nextPly <= 16) {
+    primary = "Get your next minor piece off the back rank, then castle as soon as the path is clear. Pieces before pawns.";
+  } else if (nextPly <= 24) {
+    primary = "With the king safe, start activating your **rooks** \u2014 the d- and e-files are usually the most useful.";
   } else {
-    watchEl.hidden = true;
+    primary = "You're into the planning phase. Every move should serve a concrete idea \u2014 ask yourself what the plan is before you move.";
   }
-  promptEl.hidden = false;
+
+  primaryEl.innerHTML = escapeAndBold(primary);
+
+  // ------- Secondary line: central-control read (optional) -------
+  let secondary = null;
+  try {
+    if (cc) {
+      secondary = coachCentralNote(cc, nextPly);
+    }
+  } catch (_) { /* swallow */ }
+
+  if (secondary) {
+    secondaryEl.innerHTML = escapeAndBold(secondary);
+    secondaryEl.hidden = false;
+  } else {
+    secondaryEl.textContent = "";
+    secondaryEl.hidden = true;
+  }
+
+  cardEl.hidden = false;
+}
+
+// Short coach nudge about the center state. Returns a plain sentence (may
+// contain **bold** markers) or null when nothing useful to say.
+function coachCentralNote(cc, nextPly) {
+  if (!cc) return null;
+  const net = cc.net;
+  const v = centralControlVerdict(net);
+  const signed = net > 0 ? `+${net}` : `${net}`;
+  const tag = `**Center ${signed}**`;
+  // Opening-only nudge: if white hasn't staked ground yet, suggest pushing a
+  // central pawn. Only through the first ~8 plies.
+  if (nextPly <= 8 && cc.whiteTotal < 4) {
+    return `${tag} — you haven’t staked the center. A central pawn push like **d4** or **e4** claims ground.`;
+  }
+  if (net <= -3) {
+    return `${tag} — ${v.text.toLowerCase()} Contest it before Black locks in.`;
+  }
+  if (net >= 6) {
+    return `${tag} — ${v.text.toLowerCase()} Convert the space into development.`;
+  }
+  return `${tag} — ${v.text.toLowerCase()}`;
 }
 
 function escapeAndBold(text) {
@@ -1351,11 +1435,234 @@ function clearOverlay(markerDef) {
   try { state.board.removeMarkers(markerDef); } catch (_) { /* noop */ }
 }
 
-function applyCenterOverlay() {
+// ---------- Central territory analysis ----------
+//
+// For the "Center control" overlay we need true attacker COUNTS for each
+// central square, by color — including pawn diagonals aimed at empty squares,
+// pieces defending friendly pieces, etc. chess.js's legal-moves list only
+// covers LEGAL captures, not raw square control, so we compute attacks
+// ourselves from the piece map. This is the same model a Stockfish
+// "territory" heatmap uses internally: for each piece, which squares does it
+// hit with its attack geometry?
+//
+// Returns { white: { [sq]: count }, black: { [sq]: count } } for every
+// square in CENTRAL_ZONE (zero-filled).
+function computeCentralAttackerCounts() {
+  const result = {
+    white: Object.fromEntries(CENTRAL_ZONE.map((s) => [s, 0])),
+    black: Object.fromEntries(CENTRAL_ZONE.map((s) => [s, 0])),
+  };
+  if (!state.chess) return result;
+
+  const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
+  const board = state.chess.board(); // 8x8 [row 0 = rank 8, row 7 = rank 1]
+  const target = new Set(CENTRAL_ZONE);
+
+  const sqAt = (fi, ri) => files[fi] + (ri + 1); // ri: 0=rank1..7=rank8
+  const inBounds = (fi, ri) => fi >= 0 && fi < 8 && ri >= 0 && ri < 8;
+  const pieceAt = (fi, ri) => {
+    // board[] is rank-from-top; convert ri (0=rank1) to row index
+    const row = 7 - ri;
+    return board[row][fi];
+  };
+
+  // Sliding helpers: walk in a direction until a piece or edge.
+  const slideAttacks = (fi, ri, dirs) => {
+    const hits = [];
+    for (const [df, dr] of dirs) {
+      let f = fi + df;
+      let r = ri + dr;
+      while (inBounds(f, r)) {
+        hits.push([f, r]);
+        if (pieceAt(f, r)) break; // stops after hitting ANY piece (friend or foe)
+        f += df;
+        r += dr;
+      }
+    }
+    return hits;
+  };
+  const stepAttacks = (fi, ri, offsets) => offsets
+    .map(([df, dr]) => [fi + df, ri + dr])
+    .filter(([f, r]) => inBounds(f, r));
+
+  const ROOK_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const BISHOP_DIRS = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const KNIGHT_HOPS = [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]];
+  const KING_STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+  for (let fi = 0; fi < 8; fi++) {
+    for (let ri = 0; ri < 8; ri++) {
+      const piece = pieceAt(fi, ri);
+      if (!piece) continue;
+      const side = piece.color === "w" ? "white" : "black";
+      const bucket = result[side];
+      let hits = [];
+      switch (piece.type) {
+        case "p": {
+          // Pawns attack diagonally forward.
+          const dir = piece.color === "w" ? 1 : -1;
+          hits = stepAttacks(fi, ri, [[1, dir], [-1, dir]]);
+          break;
+        }
+        case "n":
+          hits = stepAttacks(fi, ri, KNIGHT_HOPS);
+          break;
+        case "b":
+          hits = slideAttacks(fi, ri, BISHOP_DIRS);
+          break;
+        case "r":
+          hits = slideAttacks(fi, ri, ROOK_DIRS);
+          break;
+        case "q":
+          hits = slideAttacks(fi, ri, [...ROOK_DIRS, ...BISHOP_DIRS]);
+          break;
+        case "k":
+          hits = stepAttacks(fi, ri, KING_STEPS);
+          break;
+      }
+      for (const [f, r] of hits) {
+        const sq = sqAt(f, r);
+        if (target.has(sq)) bucket[sq] += 1;
+      }
+    }
+  }
+  return result;
+}
+
+// Given attacker counts, produce a per-square tier: positive means white-
+// controlled (blue), negative means black-controlled (red), zero means
+// contested/uncontested (neutral). We clamp to ±5 so the color ramp stays
+// readable.
+function computeTerritoryTiers(counts) {
+  const tiers = {};
+  let whiteTotal = 0;
+  let blackTotal = 0;
+  for (const sq of CENTRAL_ZONE) {
+    const w = counts.white[sq];
+    const b = counts.black[sq];
+    whiteTotal += w;
+    blackTotal += b;
+    const net = w - b; // >0 = white controls, <0 = black controls
+    const tier = Math.max(-5, Math.min(5, net));
+    tiers[sq] = tier;
+  }
+  return { tiers, whiteTotal, blackTotal };
+}
+
+// Sum of per-square net influence across all 16 squares. Positive = White has
+// more total presence in the center. This is the "Central control" score we
+// surface below the board and feed into the coach.
+function computeCentralControlScore() {
+  const counts = computeCentralAttackerCounts();
+  const { tiers, whiteTotal, blackTotal } = computeTerritoryTiers(counts);
+  let net = 0;
+  let whiteSquares = 0;
+  let blackSquares = 0;
+  let contestedSquares = 0;
+  for (const sq of CENTRAL_ZONE) {
+    net += tiers[sq];
+    if (tiers[sq] > 0) whiteSquares += 1;
+    else if (tiers[sq] < 0) blackSquares += 1;
+    else contestedSquares += 1;
+  }
+  return {
+    tiers,
+    counts,
+    net,
+    whiteTotal,
+    blackTotal,
+    whiteSquares,
+    blackSquares,
+    contestedSquares,
+  };
+}
+
+function clearAllTerritoryMarkers() {
   if (!state.board) return;
-  clearOverlay(MARKER_CENTER);
-  if (!state.overlayCenter) return;
-  CENTER_SQUARES.forEach((sq) => state.board.addMarker(MARKER_CENTER, sq));
+  for (const key of Object.keys(TERRITORY_MARKERS)) {
+    try { state.board.removeMarkers(TERRITORY_MARKERS[key]); } catch (_) { /* noop */ }
+  }
+}
+
+// Human-readable verdict for a given net score. Thresholds are mirrored in
+// the coach integration so both surfaces agree.
+function centralControlVerdict(net) {
+  if (net <= -6) return { text: "Black is dominating the center.", tone: "black" };
+  if (net <= -3) return { text: "Black is holding the center.",    tone: "black" };
+  if (net <   0) return { text: "Black edges the center.",         tone: "black" };
+  if (net ===  0) return { text: "Center is perfectly contested.", tone: "neutral" };
+  if (net <=  2) return { text: "Center is contested — keep pushing.", tone: "neutral" };
+  if (net <=  5) return { text: "You’re holding the center.",       tone: "white" };
+  return { text: "You’re dominating the center.", tone: "white" };
+}
+
+// Update the on-page HUD between the board and the scorecard. Only visible
+// while the Center-control overlay is active.
+function renderCentralControlHud() {
+  const hud   = document.getElementById("centerHud");
+  const score = document.getElementById("centerHudScore");
+  const desc  = document.getElementById("centerHudDesc");
+  const pips  = document.getElementById("centerHudPips");
+  if (!hud || !score || !desc) return;
+
+  if (!state.overlayCenter) {
+    hud.hidden = true;
+    hud.classList.remove("is-visible");
+    return;
+  }
+  hud.hidden = false;
+  hud.classList.add("is-visible");
+
+  const { tiers, net } = computeCentralControlScore();
+  const v = centralControlVerdict(net);
+  const signed = net > 0 ? `+${net}` : `${net}`;
+  score.textContent = signed;
+  score.classList.remove("is-white", "is-black", "is-neutral");
+  score.classList.add(`is-${v.tone}`);
+  desc.textContent = v.text;
+
+  // Mini 4x4 pip visualization (a3->f3 row at bottom visually).
+  if (pips) {
+    pips.innerHTML = "";
+    // Render rows top (rank 6) -> bottom (rank 3) to match the board orientation.
+    const ranks = [6, 5, 4, 3];
+    const files = ["c", "d", "e", "f"];
+    for (const r of ranks) {
+      for (const f of files) {
+        const t = tiers[`${f}${r}`] ?? 0;
+        const pip = document.createElement("span");
+        if (t > 0) {
+          const op = 0.10 + Math.min(Math.abs(t), 5) * 0.06;
+          pip.style.background = `rgba(74, 116, 184, ${op.toFixed(2)})`;
+        } else if (t < 0) {
+          const op = 0.10 + Math.min(Math.abs(t), 5) * 0.06;
+          pip.style.background = `rgba(192, 80, 80, ${op.toFixed(2)})`;
+        }
+        pips.appendChild(pip);
+      }
+    }
+  }
+}
+
+function applyCenterOverlay() {
+  if (!state.board) {
+    renderCentralControlHud();
+    return;
+  }
+  clearAllTerritoryMarkers();
+  if (!state.overlayCenter) {
+    renderCentralControlHud();
+    return;
+  }
+  const { tiers } = computeCentralControlScore();
+  for (const sq of CENTRAL_ZONE) {
+    const t = tiers[sq];
+    if (t === 0) continue; // neutral / contested — leave unshaded
+    const tier = Math.abs(t);
+    const key = t > 0 ? `w${tier}` : `b${tier}`;
+    state.board.addMarker(TERRITORY_MARKERS[key], sq);
+  }
+  renderCentralControlHud();
 }
 
 function applyThreatOverlay() {

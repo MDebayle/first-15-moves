@@ -197,6 +197,14 @@
             </div>
           </div>
 
+          <!-- Central-control HUD: shows up when Center-control overlay is on -->
+          <div class="center-hud" id="centerHud" aria-live="polite" hidden>
+            <span class="center-hud-label">Center</span>
+            <span class="center-hud-score is-neutral" id="centerHudScore">0</span>
+            <span class="center-hud-desc" id="centerHudDesc">Toggle “Center control” to see territory.</span>
+            <div class="center-hud-pips" id="centerHudPips" aria-hidden="true"></div>
+          </div>
+
           <!-- Scorecard: 16 boxes under the board.
                Boxes 1–15 fill in after each White move with
                "rank-out-of-legal" (or a medal for top-3).
@@ -229,66 +237,32 @@
           </div>
 
           <div class="coach-feedback" id="coachFeedback">
-            <!-- Pre-move prompt: phase goal + current concern + what to watch -->
-            <div class="coach-prompt" id="coachPrompt">
-              <p class="prompt-goal" id="promptGoal">—</p>
-              <p class="prompt-watch" id="promptWatch" hidden>—</p>
-            </div>
 
-            <p class="coach-message" id="coachMessage">
-              Make a move when you're ready. I'll tell you what it does, what it costs, and what to watch for next.
-            </p>
+            <!-- ============================================================ -->
+            <!-- Section A — VERDICT on the last move (only after a move)    -->
+            <!-- ============================================================ -->
+            <section class="verdict" id="verdictCard" hidden aria-label="Verdict on your last move">
+              <header class="verdict-head">
+                <span class="verdict-medal" id="verdictMedal" aria-hidden="true"></span>
+                <div class="verdict-meta">
+                  <span class="verdict-san" id="verdictSan">—</span>
+                  <span class="verdict-rank" id="verdictRank">—</span>
+                </div>
+              </header>
+              <p class="verdict-effect" id="verdictEffect">—</p>
+              <p class="verdict-cost" id="verdictCost" hidden>—</p>
+              <p class="verdict-axes" id="verdictAxes" hidden>—</p>
+            </section>
 
-            <!-- Two axes: Theory status (book/off-book) + Quality verdict -->
-            <div class="coach-axes" id="coachAxes" hidden>
-              <div class="axis">
-                <span class="axis-label">
-                  <span class="term" data-term="theory">Theory<span class="tt">Moves that match standard opening lines. Natural, principled moves often match theory even if you've never memorized a thing.</span></span>
-                </span>
-                <span class="axis-value" id="axisTheory">—</span>
-              </div>
-              <div class="axis">
-                <span class="axis-label">Quality</span>
-                <span class="axis-value" id="axisQuality">—</span>
-              </div>
-            </div>
+            <!-- ============================================================ -->
+            <!-- Section B — WHAT TO DO NOW (forward-looking coaching)        -->
+            <!-- ============================================================ -->
+            <section class="your-move" id="yourMoveCard" aria-label="What to do now">
+              <p class="ym-eyebrow">Your move</p>
+              <p class="ym-primary" id="ymPrimary">Make a move when you're ready.</p>
+              <p class="ym-secondary" id="ymSecondary" hidden>—</p>
+            </section>
 
-            <!-- 4-dimension rubric: Center / Development / King safety / Tempo -->
-            <div class="rubric" id="rubric" hidden>
-              <div class="rubric-row" data-dim="center">
-                <span class="rubric-name">Center</span>
-                <span class="rubric-score" id="rubCenter">0</span>
-              </div>
-              <div class="rubric-row" data-dim="development">
-                <span class="rubric-name">Development</span>
-                <span class="rubric-score" id="rubDevelopment">0</span>
-              </div>
-              <div class="rubric-row" data-dim="king-safety">
-                <span class="rubric-name">King safety</span>
-                <span class="rubric-score" id="rubKingSafety">0</span>
-              </div>
-              <div class="rubric-row" data-dim="tempo">
-                <span class="rubric-name">
-                  <span class="term" data-term="tempo">Tempo<span class="tt">A unit of time in chess. Spending a tempo means using a move. Good moves usually do more than one job per tempo.</span></span>
-                </span>
-                <span class="rubric-score" id="rubTempo">0</span>
-              </div>
-            </div>
-
-            <!-- Narrative lines: plan fit + what it costs + Black's reply -->
-            <dl class="coach-narrative" id="coachNarrative" hidden>
-              <div class="narrative-row" id="narrPlanRow" hidden>
-                <dt>Plan fit</dt><dd id="narrPlan">—</dd>
-              </div>
-              <div class="narrative-row" id="narrCostRow" hidden>
-                <dt>What this costs</dt><dd id="narrCost">—</dd>
-              </div>
-              <div class="narrative-row" id="narrBlackRow" hidden>
-                <dt>Black's reply</dt><dd id="narrBlack">—</dd>
-              </div>
-            </dl>
-
-            <ul class="coach-concepts" id="coachConcepts" aria-label="Principles touched by this move"></ul>
           </div>
 
           <div class="move-history">
