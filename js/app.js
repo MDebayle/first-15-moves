@@ -63,6 +63,7 @@ import { getKingsideBishopAdvice } from "../data/kingsideBishopAdvice.js";
 import { getQueensideKnightAdvice } from "../data/queensideKnightAdvice.js";
 import { getKingsideKnightAdvice } from "../data/kingsideKnightAdvice.js";
 import { getPawnAdvice } from "../data/pawnAdvice.js";
+import { getQueenAdvice } from "../data/queenAdvice.js";
 import { buildOpponentOpeningNote } from "./identifyBlackOpening.js";
 
 const MAX_PLIES = 30; // 15 full moves
@@ -1306,6 +1307,28 @@ function renderCoach(verdict, alternatives, moveObj, ply) {
       ply,
     });
     if (pLine) effectTxt = pLine;
+  }
+
+  // Queen override: the queen is the strongest piece on the board and the
+  // most commonly misused in the opening. The report's central thesis:
+  // the queen is strongest in the opening when it is useful but hard to
+  // hit. We celebrate quiet placements (Qe2, Qc2, Qb3) and criticize
+  // flashy adventures (Qh5 in the Italian, Qf3 too early, Qd2 or Qd3
+  // without a plan). A second queen move in the first 10 plies triggers a
+  // dedicated warning per the report's Rule 4.
+  if (moveObj && moveObj.piece === "q") {
+    const openingId = state.opening && state.opening.id;
+    const prevSan = (state.history || [])
+      .slice(0, -1)
+      .map((h) => h.san)
+      .filter(Boolean);
+    const qLine = getQueenAdvice({
+      moveObj,
+      openingId,
+      historySan: prevSan,
+      ply,
+    });
+    if (qLine) effectTxt = qLine;
   }
 
   // One-time teaching line on the first "book" move: emphasize that book is
