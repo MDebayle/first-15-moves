@@ -1057,6 +1057,17 @@ async function computerReply() {
             updatePhaseChip(state.ply);
             renderHistory();
             renderOpponentOpeningNote();
+            // BUG FIX: overlays must refresh after Black's move, not just
+            // White's. The "Threats" highlight in particular was going stale
+            // because we returned here before calling applyThreatOverlay(),
+            // leaving red squares marked after the threatening piece moved
+            // away. Do the same refresh the non-engine reply path does.
+            if (state.overlayThreats) applyThreatOverlay();
+            if (state.overlayCenter) applyCenterOverlay();
+            scheduleActorOverlayRefresh();
+            if (state.chess.isGameOver() && !state.coachOff) {
+              endSession();
+            }
             return;
           }
         }
@@ -1970,6 +1981,51 @@ function renderOpponentOpeningNote() {
 }
 
 // ---------- Annotated move log ----------
+//
+// Builds a single <li> for move pair `pairIndex` (1-based visually, 0-based here).
+// Shared between the compact right-rail list (last 3 pairs) and the full modal list.
+function buildHistoryRow(pairIndex) {
+  const white = state.history[pairIndex * 2];
+  const black = state.history[pairIndex * 2 + 1];
+
+  const row = document.createElement("li");
+  row.className = "history-row";
+  const cls = white?.critique?.classification;
+  if (cls) row.classList.add("row-" + cls);
+  if (state.selectedHistoryPly === (pairIndex * 2 + 1)) row.classList.add("is-selected");
+
+  const tagHtml = white?.critique
+    ? `<span class="tiny-badge">${escapeHtml(white.critique.label || cls || "")}</span>`
+    : "";
+
+  const whiteHtml = white
+    ? `<span class="ply ply-white"><span class="ply-san">${escapeHtml(white.san)}</span>${tagHtml}</span>`
+    : `<span class="ply ply-white"></span>`;
+  const blackHtml = black
+    ? `<span class="ply ply-black"><span class="ply-san">${escapeHtml(black.san)}</span></span>`
+    : `<span class="ply ply-black"></span>`;
+
+  row.innerHTML =
+    `<span class="row-num">${pairIndex + 1}.</span>` +
+    whiteHtml + blackHtml;
+
+  // Expandable note if there's a critique
+  if (white?.critique?.message) {
+    const note = document.createElement("div");
+    note.className = "history-note";
+    note.hidden = state.selectedHistoryPly !== (pairIndex * 2 + 1);
+    note.innerHTML = escapeAndBold(white.critique.message);
+    row.appendChild(note);
+
+    row.addEventListener("click", () => {
+      const targetPly = pairIndex * 2 + 1;
+      state.selectedHistoryPly = state.selectedHistoryPly === targetPly ? null : targetPly;
+      renderHistory();
+    });
+  }
+  return row;
+}
+
 function renderHistory() {
   const list = document.getElementById("historyAnnotated");
   if (!list) return;
@@ -1980,49 +2036,43 @@ function renderHistory() {
   const hintEl = document.getElementById("historyHint");
   if (hintEl) hintEl.hidden = !hasAnyStudentMove;
 
-  for (let i = 0; i < maxMove; i++) {
-    const white = state.history[i * 2];
-    const black = state.history[i * 2 + 1];
+  // Hide the whole move-history block until at least one ply has been played —
+  // avoids a dangling eyebrow under the opponent notes on a fresh board.
+  const historyWrap = document.querySelector(".move-history");
+  if (historyWrap) historyWrap.hidden = maxMove === 0;
 
-    const row = document.createElement("li");
-    row.className = "history-row";
-    const cls = white?.critique?.classification;
-    if (cls) row.classList.add("row-" + cls);
-    if (state.selectedHistoryPly === (i * 2 + 1)) row.classList.add("is-selected");
-
-    const tagHtml = white?.critique
-      ? `<span class="tiny-badge">${escapeHtml(white.critique.label || cls || "")}</span>`
-      : "";
-
-    const whiteHtml = white
-      ? `<span class="ply ply-white"><span class="ply-san">${escapeHtml(white.san)}</span>${tagHtml}</span>`
-      : `<span class="ply ply-white"></span>`;
-    const blackHtml = black
-      ? `<span class="ply ply-black"><span class="ply-san">${escapeHtml(black.san)}</span></span>`
-      : `<span class="ply ply-black"></span>`;
-
-    row.innerHTML =
-      `<span class="row-num">${i + 1}.</span>` +
-      whiteHtml + blackHtml;
-
-    // Expandable note if there's a critique
-    if (white?.critique?.message) {
-      const note = document.createElement("div");
-      note.className = "history-note";
-      note.hidden = state.selectedHistoryPly !== (i * 2 + 1);
-      note.innerHTML = escapeAndBold(white.critique.message);
-      row.appendChild(note);
-
-      row.addEventListener("click", () => {
-        const targetPly = i * 2 + 1;
-        state.selectedHistoryPly = state.selectedHistoryPly === targetPly ? null : targetPly;
-        renderHistory();
-      });
-    }
-
-    list.appendChild(row);
+  // Right-rail: last 3 move pairs only.
+  const COMPACT_COUNT = 3;
+  const compactStart = Math.max(0, maxMove - COMPACT_COUNT);
+  for (let i = compactStart; i < maxMove; i++) {
+    list.appendChild(buildHistoryRow(i));
   }
+
+  // Expand button appears once more than COMPACT_COUNT pairs exist.
+  const expandBtn = document.getElementById("btnHistoryExpand");
+  if (expandBtn) {
+    expandBtn.hidden = maxMove <= COMPACT_COUNT;
+    expandBtn.textContent = `See all ${maxMove} moves`;
+  }
+
+  // If the full-moves modal is open, re-render its contents too so it stays in sync.
+  const fullList = document.getElementById("historyAnnotatedFull");
+  const modal = document.getElementById("allMovesModal");
+  if (fullList && modal && modal.open) {
+    renderHistoryFull();
+  }
+
   document.getElementById("btnUndo").disabled = state.history.length === 0;
+}
+
+function renderHistoryFull() {
+  const fullList = document.getElementById("historyAnnotatedFull");
+  if (!fullList) return;
+  fullList.innerHTML = "";
+  const maxMove = Math.ceil(state.ply / 2);
+  for (let i = 0; i < maxMove; i++) {
+    fullList.appendChild(buildHistoryRow(i));
+  }
 }
 
 // ---------- Board overlays ----------
@@ -2173,11 +2223,19 @@ function computeCentralControlScore() {
   };
 }
 
+// Track which territory-marker types are currently applied so clearAll can
+// skip no-op removeMarkers() calls (each call triggers a full marker redraw
+// inside cm-chessboard). Before this tracking we were calling removeMarkers
+// ten times per refresh even when only 2-3 tiers were active.
+const _activeTerritoryKeys = new Set();
+
 function clearAllTerritoryMarkers() {
   if (!state.board) return;
-  for (const key of Object.keys(TERRITORY_MARKERS)) {
+  if (_activeTerritoryKeys.size === 0) return;
+  for (const key of _activeTerritoryKeys) {
     try { state.board.removeMarkers(TERRITORY_MARKERS[key]); } catch (_) { /* noop */ }
   }
+  _activeTerritoryKeys.clear();
 }
 
 // Human-readable verdict for a given net score. Thresholds are mirrored in
@@ -2194,7 +2252,7 @@ function centralControlVerdict(net) {
 
 // Update the on-page HUD between the board and the scorecard. Only visible
 // while the Center-control overlay is active.
-function renderCentralControlHud() {
+function renderCentralControlHud(precomputed) {
   const hud   = document.getElementById("centerHud");
   const score = document.getElementById("centerHudScore");
   const desc  = document.getElementById("centerHudDesc");
@@ -2209,7 +2267,10 @@ function renderCentralControlHud() {
   hud.hidden = false;
   hud.classList.add("is-visible");
 
-  const { tiers, net } = computeCentralControlScore();
+  // Accept a precomputed score object from applyCenterOverlay so we don't
+  // re-run the 64-square sweep twice on every refresh.
+  const computed = precomputed || computeCentralControlScore();
+  const { tiers, net } = computed;
   const v = centralControlVerdict(net);
   const signed = net > 0 ? `+${net}` : `${net}`;
   score.textContent = signed;
@@ -2253,15 +2314,19 @@ function applyCenterOverlay() {
     renderCentralControlHud();
     return;
   }
-  const { tiers } = computeCentralControlScore();
+  // Compute once, hand the same score object to the HUD renderer so the
+  // whole-board attacker sweep doesn't run twice per refresh.
+  const score = computeCentralControlScore();
+  const tiers = score.tiers;
   for (const sq of CENTRAL_ZONE) {
     const t = tiers[sq];
     if (t === 0) continue; // neutral / contested — leave unshaded
     const tier = Math.abs(t);
     const key = t > 0 ? `w${tier}` : `b${tier}`;
     state.board.addMarker(TERRITORY_MARKERS[key], sq);
+    _activeTerritoryKeys.add(key);
   }
-  renderCentralControlHud();
+  renderCentralControlHud(score);
 }
 
 function applyThreatOverlay() {
@@ -2284,7 +2349,9 @@ function applyThreatOverlay() {
   } catch (e) {
     return;
   }
-  const captures = probe.moves({ verbose: true }).filter((m) => m.flags.includes("c") || m.flags.includes("e"));
+  // We scrubbed en-passant from the probe FEN above, so only "c" (ordinary
+  // capture) can appear here. Filtering on "c" alone keeps the intent clear.
+  const captures = probe.moves({ verbose: true }).filter((m) => m.flags.includes("c"));
 
   // Count attackers per target square so we can turn up the red when multiple
   // Black pieces are hitting the same square. One attacker = base red;
@@ -2901,6 +2968,38 @@ if (summaryModalEl) {
     if (state.sessionEnded && !state.coachOff) enterContinueMode();
   });
 }
+// --- All-moves modal: expand button + close handlers ---
+const allMovesModalEl = document.getElementById("allMovesModal");
+const btnHistoryExpandEl = document.getElementById("btnHistoryExpand");
+const btnAllMovesCloseEl = document.getElementById("btnAllMovesClose");
+function openAllMovesModal() {
+  if (!allMovesModalEl) return;
+  renderHistoryFull();
+  if (typeof allMovesModalEl.showModal === "function" && !allMovesModalEl.open) {
+    allMovesModalEl.showModal();
+  } else if (!allMovesModalEl.hasAttribute("open")) {
+    allMovesModalEl.setAttribute("open", "");
+  }
+  const inner = allMovesModalEl.querySelector(".help-inner");
+  if (inner) inner.scrollTop = 0;
+}
+function closeAllMovesModal() {
+  if (!allMovesModalEl) return;
+  if (typeof allMovesModalEl.close === "function" && allMovesModalEl.open) allMovesModalEl.close();
+  else allMovesModalEl.removeAttribute("open");
+}
+if (btnHistoryExpandEl) btnHistoryExpandEl.addEventListener("click", openAllMovesModal);
+if (btnAllMovesCloseEl) btnAllMovesCloseEl.addEventListener("click", closeAllMovesModal);
+if (allMovesModalEl) {
+  allMovesModalEl.addEventListener("click", (e) => {
+    if (e.target === allMovesModalEl) closeAllMovesModal();
+  });
+  allMovesModalEl.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    closeAllMovesModal();
+  });
+}
+
 document.getElementById("btnSwitch").addEventListener("click", () => showPanel("openings"));
 const btnPickOpeningEl = document.getElementById("btnPickOpening");
 if (btnPickOpeningEl) btnPickOpeningEl.addEventListener("click", () => showPanel("openings"));

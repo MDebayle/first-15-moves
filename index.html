@@ -282,12 +282,6 @@
 
           </div>
 
-          <div class="move-history">
-            <h3 class="history-title">Moves so far</h3>
-            <ol class="history-annotated" id="historyAnnotated"></ol>
-            <p class="history-hint" id="historyHint" hidden>Tap any move to review the coach note.</p>
-          </div>
-
           <!-- "What else you could have played" — revealed when alternatives exist -->
           <div class="coach-alternatives" id="coachAlternatives" hidden>
             <p class="alts-label">What else you could have played</p>
@@ -312,12 +306,20 @@
           <section class="opponent-notes" id="opponentNotes" aria-label="Notes on opponent's opening">
             <header class="opponent-notes-head">
               <span class="opponent-notes-title">Notes on opponent&rsquo;s opening</span>
-              <span class="opponent-notes-hint">What Black is trying, and what they&rsquo;ll likely play next.</span>
             </header>
             <div class="opponent-notes-body" id="opponentNotesBody">
               <p class="opponent-notes-empty">Black hasn&rsquo;t moved yet. Notes appear here after Black&rsquo;s first move.</p>
             </div>
           </section>
+
+          <div class="move-history" hidden>
+            <div class="move-history-head">
+              <h3 class="history-title">Moves so far</h3>
+              <button class="history-expand-btn" id="btnHistoryExpand" type="button" hidden>See all moves</button>
+            </div>
+            <ol class="history-annotated" id="historyAnnotated"></ol>
+            <p class="history-hint" id="historyHint" hidden>Tap any move to review the coach note.</p>
+          </div>
         </aside>
       </section>
 
@@ -333,6 +335,22 @@
           <!-- injected by JS -->
         </div>
       </section>
+
+      <!-- All-moves modal — full annotated move list, opened from the right-rail expand button -->
+      <dialog class="help-modal moves-modal" id="allMovesModal" aria-labelledby="allMovesHeadline">
+        <article class="help-inner moves-inner">
+          <header class="help-header moves-header">
+            <div>
+              <p class="eyebrow moves-eyebrow">Every move this session</p>
+              <h2 id="allMovesHeadline">Full move log</h2>
+            </div>
+            <button class="help-close" id="btnAllMovesClose" type="button" aria-label="Close">×</button>
+          </header>
+          <section class="help-section moves-body">
+            <ol class="history-annotated history-annotated-full" id="historyAnnotatedFull"></ol>
+          </section>
+        </article>
+      </dialog>
 
       <!-- Summary modal — pops up the moment the 15th White move completes -->
       <dialog class="help-modal summary-modal" id="summaryModal" aria-labelledby="summaryHeadline">

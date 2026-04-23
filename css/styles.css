@@ -598,18 +598,71 @@ em { font-style: italic; color: var(--ink-900); }
 
 /* ---------- Move history ---------- */
 .move-history {
+  margin-top: var(--space-4);
   border-top: 1px solid var(--cream-200);
   padding-top: var(--space-3);
+}
+.move-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 .history-title {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--ink-500);
-  margin: 0 0 var(--space-3);
+  margin: 0;
   font-family: var(--font-body);
   font-weight: 600;
 }
+.history-expand-btn {
+  appearance: none;
+  border: 1px solid var(--cream-300);
+  background: transparent;
+  color: var(--ink-700);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.history-expand-btn:hover {
+  background: var(--cream-100);
+  border-color: var(--ink-500);
+  color: var(--ink-900);
+}
+.history-expand-btn:focus-visible {
+  outline: 2px solid var(--sage-500);
+  outline-offset: 2px;
+}
+.history-expand-btn[hidden] { display: none; }
+.move-history[hidden] { display: none; }
+
+/* All-moves modal — mirrors help-modal pattern but tuned for a long move list */
+.moves-modal .moves-inner { max-width: 620px; }
+.moves-modal .moves-header { padding-bottom: var(--space-3); }
+.moves-modal .moves-eyebrow {
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  margin: 0 0 4px;
+}
+.moves-modal .moves-header h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.moves-modal .moves-body { padding-top: 0; }
+.history-annotated-full { margin: 0; }
+.history-annotated-full .history-row { cursor: pointer; }
 .history-list {
   list-style: none;
   padding: 0;
@@ -2076,30 +2129,22 @@ body.has-played .preplay-only { display: none; }
   border-top: 1px solid var(--cream-200);
 }
 .opponent-notes-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
-  padding: 0 2px;
-  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  padding: 0;
 }
 .opponent-notes-title {
-  font-family: var(--font-serif, serif);
+  display: block;
+  font-family: var(--font-body);
   font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--ink-900);
-  letter-spacing: 0.01em;
-}
-.opponent-notes-hint {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
   color: var(--ink-500);
-  font-style: italic;
 }
 .opponent-notes-body {
-  padding: 2px 2px 0;
+  padding: 0;
   font-size: 0.92rem;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--ink-800);
 }
 .opponent-notes-empty {
@@ -2109,43 +2154,46 @@ body.has-played .preplay-only { display: none; }
   font-size: 0.88rem;
 }
 .opponent-notes-name {
-  font-family: var(--font-serif, serif);
+  font-family: var(--font-body);
   font-weight: 600;
   color: var(--ink-900);
   font-size: 1rem;
-  margin: 0 0 4px;
-  letter-spacing: 0.005em;
+  margin: 0 0 6px;
+  letter-spacing: -0.005em;
+  line-height: 1.3;
 }
 .opponent-notes-alt {
   display: inline-block;
   margin-left: 6px;
-  font-family: var(--font-sans, sans-serif);
+  font-family: var(--font-body);
   font-weight: 400;
-  font-style: italic;
-  font-size: 0.82rem;
+  font-style: normal;
+  font-size: 0.78rem;
   color: var(--ink-500);
+  letter-spacing: 0.01em;
 }
 .opponent-notes-blurb {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-3);
   color: var(--ink-800);
+  line-height: 1.55;
 }
 .opponent-notes-next-label {
   display: block;
-  font-family: var(--font-serif, serif);
+  font-family: var(--font-body);
   font-weight: 600;
-  font-size: 0.8rem;
-  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-700);
-  margin-bottom: 4px;
+  color: var(--ink-500);
+  margin: var(--space-2) 0 6px;
 }
 .opponent-notes-next {
   margin: 0;
   color: var(--ink-800);
   font-size: 0.9rem;
+  line-height: 1.5;
 }
 @media (max-width: 540px) {
-  .opponent-notes-hint { display: none; }
   .opponent-notes-body { font-size: 0.88rem; }
 }
 
