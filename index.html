@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>The First 15 Moves — Learn chess openings the friendly way</title>
-    <meta name="description" content="Play through the first 15 moves of classic chess openings while a kind coach explains every move. No memorization, just understanding." />
+    <title>The First 15 Moves — Master your opening, one move at a time</title>
+    <meta name="description" content="Play through the first 15 moves of classic chess openings and get plain-English feedback after every move. Built for players who know the rules and want to stop drifting through the opening." />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
 
@@ -40,107 +40,129 @@
         <span class="logo-text">The First 15 Moves</span>
       </a>
       <nav class="site-nav">
-        <a href="#about">About</a>
-        <a href="#principles">Principles</a>
+        <a href="#how">How it works</a>
+        <a href="#openings">Openings</a>
+        <a href="#hero-board" class="nav-cta">Start</a>
       </nav>
     </header>
 
     <main class="page">
-      <!-- Landing panel -->
-      <section id="landing" class="panel landing">
-        <div class="landing-copy">
-          <p class="eyebrow">Welcome</p>
-          <h1>Learn chess openings, one friendly move at a time.</h1>
-          <p class="lede">
-            The first fifteen moves of a chess game decide almost everything that
-            follows. This little website walks you through them — gently — with a
-            patient coach who explains why each move matters, and never makes you
-            feel bad for a missed step.
+      <!-- HERO: split layout, live board on the right -->
+      <section id="landing" class="panel hero" aria-label="Start a lesson">
+        <div class="hero-copy">
+          <h1 class="hero-title">Master the first 15 moves of chess.</h1>
+          <p class="hero-subhead">
+            Play through real openings, get plain-English feedback after every move, and learn the principles that make early moves strong.
           </p>
-          <ul class="landing-pillars">
-            <li><strong>Play against the computer</strong> for the first 15 moves.</li>
-            <li><strong>Get a kind, plain-English note</strong> after every move you make.</li>
-            <li><strong>Learn the ideas</strong> behind openings — not just memorize lines.</li>
+
+          <div class="hero-ctas">
+            <button class="btn-primary btn-lg" id="btnStartLesson" type="button">Start a guided lesson</button>
+            <button class="btn-ghost btn-lg" id="btnPickOpening" type="button">Pick a different opening</button>
+          </div>
+
+          <p class="hero-trust">
+            <span class="trust-dot" aria-hidden="true"></span>
+            <span>Powered by Stockfish · plain-English coaching · no memorization</span>
+          </p>
+
+          <ul class="hero-stages" aria-label="The four stages of an opening">
+            <li><span class="stage-num">1–4</span><span class="stage-label">Claim the center</span></li>
+            <li><span class="stage-num">5–8</span><span class="stage-label">Develop &amp; coordinate</span></li>
+            <li><span class="stage-num">9–12</span><span class="stage-label">King safety &amp; structure</span></li>
+            <li><span class="stage-num">13–15</span><span class="stage-label">Plan &amp; pressure</span></li>
           </ul>
         </div>
 
-        <div class="landing-choice">
-          <h2 class="choice-heading">Pick an opening to learn</h2>
-          <div class="opening-cards" id="openingCards">
-            <!-- Opening cards injected by JS -->
+        <div class="hero-board" id="hero-board">
+          <div class="hero-board-header">
+            <div class="hero-board-meta">
+              <p class="eyebrow" id="openingEco">C50</p>
+              <h2 class="opening-title" id="openingTitle">Italian Game</h2>
+            </div>
+            <div class="phase-chip" id="phaseChip" aria-live="polite">
+              <span class="phase-chip-move"><span id="moveCounter">0</span><span class="phase-chip-total"> / 15</span></span>
+              <span class="phase-chip-divider" aria-hidden="true">·</span>
+              <span class="phase-chip-stage" id="phaseStage">Claim the center</span>
+            </div>
           </div>
-          <p class="choice-footnote">
-            You'll play the <strong>White</strong> pieces. The coach will walk with you.
-          </p>
+
+          <div id="board" class="board"></div>
+
+          <div class="hero-board-footer">
+            <div class="board-actions">
+              <button class="btn-ghost btn-sm" id="btnUndo" type="button" disabled>Undo</button>
+              <button class="btn-ghost btn-sm" id="btnHint" type="button">Hint</button>
+              <button class="btn-ghost btn-sm" id="btnSwitch" type="button">Switch opening</button>
+              <button class="btn-primary btn-sm" id="btnResign" type="button">End session</button>
+            </div>
+          </div>
         </div>
+
+        <aside class="coach-panel" aria-label="Coach feedback">
+          <div class="coach-header">
+            <div class="coach-avatar" aria-hidden="true">
+              <svg viewBox="0 0 40 40" width="40" height="40">
+                <circle cx="20" cy="20" r="19" fill="#f0e8d8" stroke="#2f6b5a" stroke-width="1.2" />
+                <circle cx="20" cy="17" r="6" fill="#2f6b5a" />
+                <path d="M8 34 C 11 26, 29 26, 32 34 Z" fill="#2f6b5a" />
+              </svg>
+            </div>
+            <div>
+              <p class="coach-name">Coach</p>
+              <p class="coach-status" id="coachStatus">Waking up…</p>
+            </div>
+          </div>
+
+          <div class="coach-feedback" id="coachFeedback">
+            <p class="coach-message" id="coachMessage">
+              Make a move when you're ready. I'll tell you what it does, what it costs, and what to watch for next.
+            </p>
+            <div class="coach-meta" id="coachMeta" hidden>
+              <span class="badge" id="coachBadge">Book</span>
+              <span class="coach-eval" id="coachEval"></span>
+            </div>
+            <ul class="coach-concepts" id="coachConcepts" aria-label="Principles touched by this move"></ul>
+          </div>
+
+          <div class="move-history">
+            <h3 class="history-title">Moves so far</h3>
+            <ol class="history-list" id="historyList"></ol>
+          </div>
+        </aside>
       </section>
 
-      <!-- Game panel -->
-      <section id="game" class="panel game" hidden>
-        <div class="game-header">
-          <div>
-            <p class="eyebrow" id="openingEco">—</p>
-            <h2 class="opening-title" id="openingTitle">—</h2>
-            <p class="opening-intro" id="openingIntro">—</p>
-          </div>
-          <button class="btn-ghost" id="btnBackToMenu" type="button">← Pick a different opening</button>
+      <!-- Opening picker (revealed on demand, not gating the hero) -->
+      <section id="openings" class="panel openings-panel" hidden>
+        <div class="section-head">
+          <p class="eyebrow">Openings</p>
+          <h2>Pick an opening to study</h2>
+          <p class="section-sub">You'll play the White pieces through move 15 and get feedback on every move.</p>
         </div>
-
-        <div class="game-grid">
-          <div class="board-wrap">
-            <div id="board" class="board"></div>
-            <div class="board-footer">
-              <div class="move-counter">
-                <span class="move-counter-label">Move</span>
-                <span id="moveCounter">0</span>
-                <span class="move-counter-total">/ 15</span>
-              </div>
-              <div class="board-actions">
-                <button class="btn-ghost" id="btnUndo" type="button" disabled>Undo</button>
-                <button class="btn-ghost" id="btnHint" type="button">Hint</button>
-                <button class="btn-primary" id="btnResign" type="button">End session</button>
-              </div>
-            </div>
-          </div>
-
-          <aside class="coach-panel">
-            <div class="coach-header">
-              <div class="coach-avatar" aria-hidden="true">
-                <svg viewBox="0 0 40 40" width="40" height="40">
-                  <circle cx="20" cy="20" r="19" fill="#f0e8d8" stroke="#2f6b5a" stroke-width="1.2" />
-                  <circle cx="20" cy="17" r="6" fill="#2f6b5a" />
-                  <path d="M8 34 C 11 26, 29 26, 32 34 Z" fill="#2f6b5a" />
-                </svg>
-              </div>
-              <div>
-                <p class="coach-name">Your coach</p>
-                <p class="coach-status" id="coachStatus">Analyzing…</p>
-              </div>
-            </div>
-
-            <div class="coach-feedback" id="coachFeedback">
-              <p class="coach-message" id="coachMessage">
-                Make your first move whenever you're ready. I'll tell you what I think, kindly.
-              </p>
-              <div class="coach-meta" id="coachMeta" hidden>
-                <span class="badge" id="coachBadge">Book</span>
-                <span class="coach-eval" id="coachEval"></span>
-              </div>
-              <ul class="coach-concepts" id="coachConcepts"></ul>
-            </div>
-
-            <div class="move-history">
-              <h3 class="history-title">Moves so far</h3>
-              <ol class="history-list" id="historyList"></ol>
-            </div>
-          </aside>
+        <div class="opening-cards" id="openingCards">
+          <!-- injected by JS -->
         </div>
       </section>
 
       <!-- Summary panel -->
       <section id="summary" class="panel summary" hidden>
-        <h2>Nice work.</h2>
+        <p class="eyebrow">Session recap</p>
+        <h2 id="summaryHeadline">Session complete.</h2>
         <p class="summary-opening" id="summaryOpening">—</p>
+
+        <div class="summary-questions">
+          <div class="qblock qblock-good">
+            <p class="qblock-label">What you did well</p>
+            <p class="qblock-body" id="qGood">—</p>
+          </div>
+          <div class="qblock qblock-drift">
+            <p class="qblock-label">Where you started drifting</p>
+            <p class="qblock-body" id="qDrift">—</p>
+          </div>
+          <div class="qblock qblock-lesson">
+            <p class="qblock-label">What to remember next time</p>
+            <p class="qblock-body" id="qLesson">—</p>
+          </div>
+        </div>
 
         <div class="summary-stats">
           <div class="stat">
@@ -152,7 +174,7 @@
             <span class="stat-value" id="statDeviation">—</span>
           </div>
           <div class="stat">
-            <span class="stat-label">Biggest concept</span>
+            <span class="stat-label">Recurring theme</span>
             <span class="stat-value" id="statConcept">—</span>
           </div>
         </div>
@@ -165,40 +187,58 @@
         </div>
       </section>
 
-      <section id="principles" class="panel principles">
-        <h2>What you'll actually learn</h2>
-        <div class="principles-grid">
-          <div>
-            <h3>Control the center</h3>
-            <p>Pieces in the middle of the board have more reach. Almost every opening begins by fighting for e4, d4, e5, and d5.</p>
-          </div>
-          <div>
-            <h3>Develop before you attack</h3>
-            <p>Get your knights and bishops out before launching anything. An undeveloped army loses — in chess and everywhere else.</p>
-          </div>
-          <div>
-            <h3>Keep your king safe</h3>
-            <p>Castle early, usually within the first eight moves. A king in the center of the board is a king in danger.</p>
-          </div>
-          <div>
-            <h3>Don't move the same piece twice</h3>
-            <p>Unless you have a very good reason, develop each piece once and move on. Time is a resource in the opening.</p>
-          </div>
+      <!-- How it works -->
+      <section id="how" class="panel how">
+        <div class="section-head">
+          <p class="eyebrow">How it works</p>
+          <h2>Five moves, five things to notice.</h2>
         </div>
+        <ol class="how-steps">
+          <li>
+            <span class="how-num">1</span>
+            <div>
+              <h3>Play a move</h3>
+              <p>Drag or click a piece. The board accepts any legal move — we won't force you into a script.</p>
+            </div>
+          </li>
+          <li>
+            <span class="how-num">2</span>
+            <div>
+              <h3>Get a verdict</h3>
+              <p>Book, playable, inaccuracy, mistake, or blunder — based on theory <em>and</em> what Stockfish thinks.</p>
+            </div>
+          </li>
+          <li>
+            <span class="how-num">3</span>
+            <div>
+              <h3>See the principles</h3>
+              <p>Each move is tagged with the ideas it supports or breaks: center, development, king safety, tempo.</p>
+            </div>
+          </li>
+          <li>
+            <span class="how-num">4</span>
+            <div>
+              <h3>Finish 15 moves</h3>
+              <p>Complete the opening phase. The computer plays a real reply at each step, not a softball.</p>
+            </div>
+          </li>
+          <li>
+            <span class="how-num">5</span>
+            <div>
+              <h3>Take a lesson away</h3>
+              <p>The recap names what you did well, where you drifted, and the one idea worth remembering next time.</p>
+            </div>
+          </li>
+        </ol>
       </section>
 
-      <section id="about" class="panel about">
-        <h2>Why the first fifteen moves?</h2>
-        <p>
-          Grandmasters know the opening cold. Beginners often don't — and the gap
-          decides most games before move 20. The good news: the first fifteen
-          moves reward understanding far more than memorization. Learn the ideas,
-          and the moves follow.
+      <!-- Closing note -->
+      <section class="panel about">
+        <p class="about-lede">
+          A good opening won't win every game, but a bad opening makes every game harder. Most players don't lose the opening because they failed to memorize — they lose it because they didn't understand what each early move was <em>for</em>.
         </p>
-        <p>
-          This site pairs a real chess engine (Stockfish, running in your browser)
-          with hand-written notes on classical opening theory. The engine checks
-          the math. The coach explains the meaning.
+        <p class="about-lede about-lede-muted">
+          This site pairs Stockfish with hand-written theory notes. The engine checks the math. The coach explains the meaning.
         </p>
       </section>
     </main>
@@ -213,333 +253,5 @@
     </footer>
 
     <script type="module" src="./js/app.js"></script>
-  <script data-pplx-inline-edit>
-(function () {
-  if (window === window.top) return;
-
-  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
-  const MAX_FONT_BYTES = 500 * 1024;
-  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
-  let scrollForwarding = false;
-  let scrollRaf = 0;
-  let trustedTopOrigin = null;
-
-  // Allow entries like "https://*.preview.i.perplexity.ai" — the wildcard
-  // matches a single DNS label (no dots), so "https://*.foo" cannot stretch
-  // across multiple labels.
-  function matchesAllowedOrigin(origin) {
-    if (!origin) return false;
-    for (const entry of allowedParentOrigins) {
-      if (!entry.includes("*")) {
-        if (entry === origin) return true;
-        continue;
-      }
-      const pattern = new RegExp(
-        "^" +
-          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
-          "$",
-      );
-      if (pattern.test(origin)) return true;
-    }
-    return false;
-  }
-
-  // Trust decision: when the sender is same-origin-visible (event.origin is a
-  // real origin like https://www.perplexity.ai) we trust event.origin directly.
-  // When event.origin is "null" (opaque broker srcdoc), we fall back to the
-  // broker's stamped `parentOrigin` to identify the top window. The fallback
-  // is claim-only — we rely on the browser's native `targetOrigin` enforcement
-  // on the response path (see postToTrustedTop) to ensure replies can't be
-  // delivered to anyone but the actual top window of that claimed origin.
-  function getTrustedParentOrigin(event) {
-    const forwardedParentOrigin =
-      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
-    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
-    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
-  }
-
-  // All responses go to window.top with targetOrigin = the allowlisted origin.
-  // An attacker that iframes us inside their own null-origin broker can claim
-  // any parentOrigin they like, but the browser will drop the reply whenever
-  // the real top's origin doesn't match — so the screenshot never leaves.
-  function postToTrustedTop(message) {
-    if (!trustedTopOrigin) return;
-    try {
-      window.top.postMessage(message, trustedTopOrigin);
-    } catch (_error) {}
-  }
-
-  function inlineAll(original, clone) {
-    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
-
-    try {
-      const computedStyle = getComputedStyle(original);
-      // cssText on a computed style is the serialized declaration in modern
-      // Chromium/Safari — a single read beats enumerating ~400 longhand
-      // properties. Firefox returns "" here, so we fall back on empty.
-      const serialized = computedStyle.cssText;
-      if (serialized) {
-        clone.style.cssText = serialized;
-      } else {
-        const parts = new Array(computedStyle.length);
-        for (let index = 0; index < computedStyle.length; index += 1) {
-          const property = computedStyle[index];
-          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
-        }
-        clone.style.cssText = parts.join("");
-      }
-    } catch (_error) {}
-
-    const originalChildren = original.children;
-    const clonedChildren = clone.children;
-    for (
-      let index = 0;
-      index < originalChildren.length && index < clonedChildren.length;
-      index += 1
-    ) {
-      inlineAll(originalChildren[index], clonedChildren[index]);
-    }
-  }
-
-  function extractFontUrl(srcValue) {
-    const matches = [
-      ...srcValue.matchAll(
-        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
-      ),
-    ];
-    if (matches.length === 0) return null;
-    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
-    if (woff2) return woff2[1];
-    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
-    if (woff) return woff[1];
-    return matches[0][1];
-  }
-
-  // Cache resolved font URL -> data URI across captures. Fonts on a page
-  // essentially never change, and a batch run emits multiple captures back to
-  // back — without this we'd refetch + re-base64 every time.
-  const fontDataUriCache = new Map();
-  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
-
-  async function fetchAsDataUri(url) {
-    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
-    let dataUri = null;
-    try {
-      const response = await fetch(url, { mode: "cors", credentials: "omit" });
-      if (response.ok) {
-        const blob = await response.blob();
-        if (blob.size <= MAX_FONT_BYTES) {
-          dataUri = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () =>
-              resolve(typeof reader.result === "string" ? reader.result : null);
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(blob);
-          });
-        }
-      }
-    } catch (_error) {
-      dataUri = null;
-    }
-    fontDataUriCache.set(url, dataUri);
-    return dataUri;
-  }
-
-  function collectFontFaceRuleTexts() {
-    const rules = [];
-    for (const sheet of document.styleSheets) {
-      let cssRules;
-      try {
-        cssRules = sheet.cssRules;
-      } catch (_error) {
-        continue;
-      }
-      if (!cssRules) continue;
-      for (const rule of cssRules) {
-        const cssText = rule.cssText || "";
-        if (cssText.startsWith("@font-face")) rules.push(cssText);
-      }
-    }
-    return rules;
-  }
-
-  async function buildInlinedFontCss() {
-    const ruleTexts = collectFontFaceRuleTexts();
-    if (ruleTexts.length === 0) return null;
-
-    const resolved = ruleTexts.map((cssText) => {
-      if (!SRC_DECLARATION_RE.test(cssText)) return null;
-      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
-      if (!srcMatch) return null;
-      const url = extractFontUrl(srcMatch[1]);
-      if (!url) return null;
-      try {
-        return { cssText, url: new URL(url, document.baseURI).href };
-      } catch (_error) {
-        return null;
-      }
-    });
-
-    const dataUris = await Promise.all(
-      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
-    );
-
-    const inlined = [];
-    let totalBytes = 0;
-    for (let index = 0; index < resolved.length; index += 1) {
-      const entry = resolved[index];
-      const dataUri = dataUris[index];
-      if (!entry || !dataUri) continue;
-      const approxBytes = dataUri.length * 0.75;
-      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
-      totalBytes += approxBytes;
-      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
-    }
-    return inlined.length > 0 ? inlined.join("\n") : null;
-  }
-
-  function stripExternal(clone) {
-    const images = clone.querySelectorAll("img");
-    for (let index = 0; index < images.length; index += 1) {
-      const src = images[index].getAttribute("src");
-      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
-    }
-
-    const elements = clone.querySelectorAll("*");
-    for (let index = 0; index < elements.length; index += 1) {
-      const style = elements[index].style.cssText;
-      if (style && style.includes("url(")) {
-        elements[index].style.cssText = style.replace(
-          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
-          "none",
-        );
-      }
-    }
-  }
-
-  function emitScroll() {
-    scrollRaf = 0;
-    if (!scrollForwarding) return;
-    postToTrustedTop({
-      type: "INLINE_EDIT_SCROLL",
-      scrollX: window.scrollX,
-      scrollY: window.scrollY,
-    });
-  }
-
-  window.addEventListener(
-    "scroll",
-    function () {
-      if (!scrollForwarding || scrollRaf) return;
-      scrollRaf = requestAnimationFrame(emitScroll);
-    },
-    { passive: true, capture: true },
-  );
-
-  async function handleCaptureRequest(event) {
-    const requestId = event.data.requestId;
-    const scrollX = window.scrollX;
-    const scrollY = window.scrollY;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-
-    function postResult(dataUrl) {
-      postToTrustedTop({
-        type: "INLINE_EDIT_SCREENSHOT_RESULT",
-        requestId,
-        dataUrl,
-        scrollX,
-        scrollY,
-      });
-    }
-
-    try {
-      // Wait for any pending web fonts to resolve so both inline metrics and
-      // the @font-face inlining below see the same loaded faces.
-      if (document.fonts && document.fonts.ready) {
-        try {
-          await document.fonts.ready;
-        } catch (_error) {}
-      }
-
-      const clone = document.documentElement.cloneNode(true);
-      inlineAll(document.documentElement, clone);
-
-      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
-      for (let index = 0; index < removedNodes.length; index += 1) {
-        removedNodes[index].remove();
-      }
-
-      stripExternal(clone);
-
-      // Re-embed web fonts as data-URI @font-face rules so the SVG rasterizer
-      // can resolve them — external font URLs aren't fetched during
-      // foreignObject rendering, which would otherwise force a fallback face
-      // and change text metrics.
-      const inlinedFontCss = await buildInlinedFontCss();
-      if (inlinedFontCss) {
-        const styleEl = document.createElement("style");
-        styleEl.textContent = inlinedFontCss;
-        const head = clone.querySelector("head");
-        if (head) head.appendChild(styleEl);
-        else clone.insertBefore(styleEl, clone.firstChild);
-      }
-
-      const html = new XMLSerializer().serializeToString(clone);
-      const svg =
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
-        '<foreignObject width="100%" height="100%">' +
-        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
-        `<div style="transform:translate(-${scrollX}px,-${scrollY}px);transform-origin:top left">` +
-        html +
-        "</div></div></foreignObject></svg>";
-      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-      const image = new Image();
-      image.onload = function () {
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext("2d").drawImage(image, 0, 0);
-        postResult(canvas.toDataURL("image/png"));
-      };
-      image.onerror = function () {
-        postResult(null);
-      };
-      image.src = svgUrl;
-    } catch (_error) {
-      postResult(null);
-    }
-  }
-
-  window.addEventListener("message", function (event) {
-    if (!event.data) return;
-    // Only accept messages from the direct parent frame. Blocks sibling /
-    // unrelated-window postMessage senders that could otherwise reach us.
-    if (event.source !== window.parent) return;
-
-    const trustedParentOrigin = getTrustedParentOrigin(event);
-    if (!trustedParentOrigin) return;
-    trustedTopOrigin = trustedParentOrigin;
-
-    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
-      scrollForwarding = true;
-      emitScroll();
-      return;
-    }
-
-    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
-      scrollForwarding = false;
-      if (scrollRaf) cancelAnimationFrame(scrollRaf);
-      scrollRaf = 0;
-      return;
-    }
-
-    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
-
-    handleCaptureRequest(event);
-  });
-})();
-
-
-</script></body>
+  </body>
 </html>

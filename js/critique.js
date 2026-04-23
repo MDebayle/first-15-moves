@@ -6,9 +6,9 @@
  *   2) Engine score   — how much did Stockfish's evaluation change?
  *   3) Concept score  — does the move respect universal opening principles?
  *
- * Produces a classification (Book / Good / Playable / Inaccuracy / Mistake /
- * Blunder) and a warm, plain-English sentence. We deliberately keep the tone
- * encouraging even when the move is weak.
+ * Tone: confident, concrete, coach-like. Warm but not timid. We tell the
+ * player what the move does, what it costs, and what to watch for next —
+ * without cushioning every sentence.
  */
 
 import { UNIVERSAL_PRINCIPLES } from "../data/openings.js";
@@ -23,63 +23,58 @@ export const CLASS = {
 };
 
 const CLASS_LABEL = {
-  book: "Book move",
-  good: "Good move",
+  book: "Book",
+  good: "Good",
   playable: "Playable",
   inaccuracy: "Inaccuracy",
   mistake: "Mistake",
   blunder: "Blunder",
 };
 
-const WARM_LEAD = {
+// One sharp opening sentence per classification. No "gentle" filler.
+const LEAD = {
   book: [
-    "Excellent — that's right in the heart of the theory.",
-    "Beautifully played. That's the main line.",
-    "Textbook. This is exactly the idea.",
+    "That's the main line.",
+    "Textbook — exactly the idea here.",
+    "Right on book.",
   ],
   good: [
-    "Nice move.",
-    "That's a solid choice.",
-    "Good — that works well here.",
+    "Good move.",
+    "Solid choice.",
+    "That works.",
   ],
   playable: [
-    "That's playable.",
-    "Perfectly reasonable.",
-    "Not the main line, but still fine.",
+    "Playable.",
+    "Not the main line, but it holds up.",
+    "Reasonable — just not the cleanest version.",
   ],
   inaccuracy: [
-    "Not bad, but we can do a little better here.",
-    "This is okay, though a stronger move exists.",
-    "Playable, but not quite optimal.",
+    "Slightly inaccurate.",
+    "A small inaccuracy.",
+    "Not wrong, but there's a sharper move.",
   ],
   mistake: [
-    "Let's look at this one together.",
-    "I'd think twice about this — don't worry, we'll fix it.",
-    "A small slip, and totally normal while learning.",
+    "This one costs you.",
+    "That's a real mistake.",
+    "Noticeable drop in the position.",
   ],
   blunder: [
-    "Take a breath — this one's a tough one, but we learn more from these than from perfect moves.",
-    "Here's a teachable moment. Let me show you what I'd play instead.",
-    "No worries, everybody makes this kind of move while learning. Here's the idea:",
+    "That's a blunder.",
+    "Ouch — this one gives up material or structure.",
+    "Big drop. Worth studying carefully.",
   ],
+};
+
+// Positive principles these moves *support* (shown as green tags)
+const POSITIVE_PRINCIPLE_NOTES = {
+  center: "claims the center",
+  development: "develops a piece",
+  "king-safety": "helps king safety",
+  castle: "king safety",
 };
 
 /**
  * Classify a user move.
- *
- * @param {object} ctx
- *   - ctx.san:         move in SAN, e.g. "e4", "Nf3"
- *   - ctx.uci:         move in UCI (e.g. e2e4)
- *   - ctx.ply:         ply number (1-based; 1 = white's first move)
- *   - ctx.opening:     the chosen opening (from OPENINGS)
- *   - ctx.alternatives: array of alternative entries for this ply (if any)
- *   - ctx.mainlineSan: the mainline SAN move for this ply (if known)
- *   - ctx.cpLoss:      centipawn loss (positive = worse for the mover)
- *   - ctx.evalBefore:  eval before (cp from mover's perspective)
- *   - ctx.evalAfter:   eval after (cp from mover's perspective)
- *   - ctx.side:        'w' | 'b' — which side the student played
- *   - ctx.moveObj:     chess.js move object (from/to/piece/flags/promotion)
- *   - ctx.historySan:  list of all SAN moves so far (including this one)
  */
 export function critique(ctx) {
   const { san, mainlineSan, alternatives = [], cpLoss, moveObj, historySan = [], ply, side } = ctx;
@@ -95,73 +90,74 @@ export function critique(ctx) {
   if (isMainline) {
     theoryLabel = "mainline";
   } else if (altMatch) {
-    theoryLabel = altMatch.label; // "playable" | "inaccuracy" | "mistake"
+    theoryLabel = altMatch.label;
     theoryWhy = altMatch.why;
     theoryConcepts = altMatch.concepts || [];
   }
 
-  // 2) Concept checks
-  const conceptNotes = [];
+  // 2) Concept analysis (both positive and negative signals)
+  const positivePrinciples = detectPositivePrinciples(moveObj, historySan, ply, side);
   const conceptIssues = runConceptChecks(moveObj, historySan, side, ply);
-  conceptIssues.forEach((c) => conceptNotes.push(c));
 
   // 3) Engine loss bucketing
   const engineBucket = bucketCpLoss(cpLoss);
 
   // Combine into a single classification.
-  // Theory wins if explicit; otherwise engine bucket; then concept downgrades.
   let classification;
   if (theoryLabel === "mainline") {
     classification = CLASS.BOOK;
   } else if (theoryLabel === "playable") {
-    // Engine check can still downgrade
     classification = engineBucket === "ok" ? CLASS.PLAYABLE : engineBucket;
   } else if (theoryLabel === "inaccuracy") {
     classification = CLASS.INACCURACY;
   } else if (theoryLabel === "mistake") {
     classification = CLASS.MISTAKE;
   } else {
-    // Out of book entirely: engine decides, with a softer opening tolerance
     classification = engineBucket === "ok" ? CLASS.PLAYABLE : engineBucket;
   }
 
-  // Downgrade if concept issues and currently classified as good/book
   if (conceptIssues.length > 0 && (classification === CLASS.BOOK || classification === CLASS.GOOD || classification === CLASS.PLAYABLE)) {
     classification = CLASS.INACCURACY;
   }
 
-  // Build coach message
-  const lead = pick(WARM_LEAD[classification] || WARM_LEAD.playable);
+  // ---- Build coach message: 2-3 short sentences max ----
+  // Structure: [Lead] + [Why: theory reason OR top concept note] + [Main line recommendation OR engine verdict]
+  const lead = pick(LEAD[classification] || LEAD.playable);
   const parts = [lead];
 
+  // Pick the most specific "why" — prefer curated theory, else first concept issue
   if (theoryWhy) {
     parts.push(theoryWhy);
-  } else if (classification === CLASS.BOOK) {
-    parts.push("This is a mainline move in the opening we're studying.");
-  } else if (theoryLabel == null && classification === CLASS.PLAYABLE) {
-    parts.push("You've stepped outside our curated line, but the move itself is reasonable.");
+  } else if (conceptIssues.length > 0) {
+    parts.push(conceptIssues[0].note);
   }
 
-  // Concept notes tail
-  conceptIssues.forEach((c) => parts.push(c.note));
-
-  // Engine numeric tail (soft)
-  if (cpLoss != null) {
-    if (cpLoss >= 250) {
-      parts.push(`Stockfish sees this as a meaningful drop — about ${Math.round(cpLoss)} centipawns.`);
-    } else if (cpLoss >= 100) {
-      parts.push("The engine does notice a small cost, but nothing fatal.");
-    }
-  }
-
-  // Recommended alternative text
+  // Recommended alternative OR engine verdict. One of these, not both.
   let recommended = null;
   if (classification !== CLASS.BOOK && mainlineSan && mainlineSan !== san) {
     recommended = mainlineSan;
-    parts.push(`In this opening, the go-to move here is ${mainlineSan}.`);
+    parts.push(`Main line here is **${mainlineSan}**.`);
+  } else if (cpLoss != null && cpLoss >= 200) {
+    parts.push(`Stockfish sees about ${Math.round(cpLoss)} cp lost.`);
   }
 
-  const concepts = [...new Set([...theoryConcepts, ...conceptNotes.map((c) => c.tag).filter(Boolean)])];
+  // ---- Tag list for the UI ----
+  // Positive principles supported, then negative issues.
+  const positiveTags = positivePrinciples.map((p) => ({ tag: p, polarity: "positive" }));
+  const negativeTags = [
+    ...theoryConcepts.map((t) => ({ tag: t, polarity: "negative" })),
+    ...conceptIssues.map((c) => ({ tag: c.tag, polarity: "negative" })).filter((t) => t.tag),
+  ];
+
+  // Dedupe by tag key
+  const seen = new Set();
+  const concepts = [];
+  for (const t of [...positiveTags, ...negativeTags]) {
+    if (!seen.has(t.tag)) {
+      seen.add(t.tag);
+      concepts.push(t);
+    }
+  }
 
   return {
     classification,
@@ -171,7 +167,7 @@ export function critique(ctx) {
     cpLoss: cpLoss != null ? Math.round(cpLoss) : null,
     evalBefore: ctx.evalBefore,
     evalAfter: ctx.evalAfter,
-    concepts,
+    concepts, // array of { tag, polarity: "positive" | "negative" }
     isInBook: theoryLabel !== null,
     isMainline,
   };
@@ -179,8 +175,6 @@ export function critique(ctx) {
 
 function bucketCpLoss(cpLoss) {
   if (cpLoss == null) return "ok";
-  // In the opening we use generous thresholds — getting slightly worse is
-  // normal and shouldn't get a harsh label.
   if (cpLoss < 40) return "ok";
   if (cpLoss < 100) return CLASS.PLAYABLE;
   if (cpLoss < 180) return CLASS.INACCURACY;
@@ -193,40 +187,76 @@ function pick(arr) {
 }
 
 /**
- * Concept checks — universal opening principles.
+ * Detect which opening principles a move *supports*.
+ * Only runs in the opening phase.
+ */
+function detectPositivePrinciples(moveObj, historySan, ply, side) {
+  const tags = [];
+  if (!moveObj) return tags;
+  if (ply > UNIVERSAL_PRINCIPLES.openingPlies) return tags;
+
+  const piece = moveObj.piece;
+  const to = moveObj.to;
+  const from = moveObj.from;
+  const flags = moveObj.flags || "";
+
+  // Castling -> king safety
+  if (flags.includes("k") || flags.includes("q")) {
+    tags.push("king-safety");
+  }
+
+  // Central pawn push e2-e4, d2-d4, e7-e5, d7-d5 (fighting for center)
+  if (piece === "p") {
+    const centerFiles = new Set(["d", "e"]);
+    if (centerFiles.has(to[0]) && (to[1] === "4" || to[1] === "5")) {
+      tags.push("center");
+    }
+  }
+
+  // Knight or bishop development from back rank
+  if ((piece === "n" || piece === "b") && isBackRankForSide(from, side)) {
+    tags.push("development");
+  }
+
+  return tags;
+}
+
+function isBackRankForSide(square, side) {
+  if (!square) return false;
+  const rank = square[1];
+  return side === "w" ? rank === "1" : rank === "8";
+}
+
+/**
+ * Concept checks — opening principles violated.
  * @returns array of { tag, note }
  */
 function runConceptChecks(moveObj, historySan, side, ply) {
   const issues = [];
   if (!moveObj) return issues;
-
-  // Only apply in the opening
   if (ply > UNIVERSAL_PRINCIPLES.openingPlies) return issues;
 
-  const piece = moveObj.piece; // 'p','n','b','r','q','k'
+  const piece = moveObj.piece;
   const from = moveObj.from;
   const to = moveObj.to;
 
-  // 1) Early queen sortie — queen moved before most minor pieces are developed
+  // 1) Early queen sortie
   if (piece === "q" && ply <= 8) {
     const mySan = historySan.filter((_, i) => (side === "w" ? i % 2 === 0 : i % 2 === 1));
     const minorDeveloped = mySan.slice(0, -1).filter((m) => /^[NB]/.test(m)).length;
     if (minorDeveloped < 2) {
       issues.push({
         tag: "early-queen",
-        note:
-          "One gentle note: bringing the queen out this early can let the opponent develop with tempo by attacking her. Usually we want our knights and bishops out first.",
+        note: "Bringing the queen out this early lets the opponent gain tempo by attacking her. Knights and bishops first.",
       });
     }
   }
 
-  // 2) Moving the same piece twice in the opening (ignoring captures/recaptures)
+  // 2) Moving the same piece twice in the opening (ignoring captures)
   if (moveObj.flags && !moveObj.flags.includes("c") && !moveObj.flags.includes("e")) {
     const mySan = historySan.filter((_, i) => (side === "w" ? i % 2 === 0 : i % 2 === 1));
-    // This move is already at the end of mySan. Check if the same piece moved earlier.
     const myPrev = mySan.slice(0, -1);
     if (piece !== "p" && myPrev.length > 0) {
-      // Naive check: look for a previous SAN with the same piece letter that lands on `from`
       const pieceLetter = piece.toUpperCase();
       const repeatedPiece = myPrev.some((san) => {
         if (piece === "p") return false;
@@ -235,21 +265,19 @@ function runConceptChecks(moveObj, historySan, side, ply) {
       if (repeatedPiece && ply <= 10) {
         issues.push({
           tag: "piece-twice",
-          note:
-            "A small thought: in the opening, we usually avoid moving the same piece twice unless there's a clear reason — time matters.",
+          note: "You moved the same piece twice in the opening. Finish developing the others first.",
         });
       }
     }
   }
 
-  // 3) Flank pawn pushes in early opening
+  // 3) Flank pawn pushes early
   if (piece === "p" && ply <= 6) {
     const file = to[0];
     if (UNIVERSAL_PRINCIPLES.flankPawnFiles.has(file)) {
       issues.push({
         tag: "flank-pawn",
-        note:
-          "Pushing an edge pawn this early doesn't fight for the center or develop anything. The center is where the action is.",
+        note: "An edge pawn this early does nothing for the center.",
       });
     }
   }
