@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: first-15-moves-api
+    runtime: docker
+    plan: starter              # $7/month, stays awake (no cold starts)
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ALLOWED_ORIGINS
+        # Set this in the Render dashboard to your Netlify site URL(s).
+        # Example: https://first-15-moves.netlify.app,https://yourcustomdomain.com
+        sync: false
+      - key: RATE_LIMIT
+        value: 60
